@@ -1,8 +1,11 @@
-import anthropic
+from openai import OpenAI
 import os
 import json
 
-client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+client = OpenAI(
+    api_key=os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY"),
+    base_url=os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+)
 
 SYSTEM_PROMPT = """You are an outreach agent for Tenacious Consulting and Outsourcing.
 Tenacious provides managed talent outsourcing and project consulting to B2B tech companies.
@@ -72,10 +75,17 @@ Return valid JSON only — no markdown, no backticks:
   "avg_confidence": float
 }}
 """
-    response = client.messages.create(
-        model="claude-sonnet-4-5-20251022",
+    response = client.chat.completions.create(
+        model="openai/gpt-4o-mini",
         max_tokens=600,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}]
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ]
     )
-    return json.loads(response.content[0].text), response.usage
+    text = response.choices[0].message.content.strip()
+    if text.startswith("```json"):
+        text = text[7:-3].strip()
+    elif text.startswith("```"):
+        text = text[3:-3].strip()
+    return json.loads(text), dict(response.usage)

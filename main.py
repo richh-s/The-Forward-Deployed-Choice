@@ -14,6 +14,7 @@ from agent.calendar       import get_available_slots, book_discovery_call
 
 client = anthropic.Anthropic()
 
+SYNTHETIC_PROSPECT["email"] = "rahelsamson953@gmail.com"
 
 def run_happy_path():
     print("=== HAPPY PATH START ===")

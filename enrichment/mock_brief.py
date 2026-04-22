@@ -2,7 +2,7 @@ from enrichment.icp_classifier import classify_icp_segment
 
 SYNTHETIC_PROSPECT = {
     "name": "Jordan Kim",
-    "email": "jordan.kim@synthetic-novapay.dev",
+    "email": "rahelsamson953@gmail.com",
     "company": "NovaPay Technologies",
     "phone": "+1-555-0142"
 }

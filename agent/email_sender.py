@@ -19,8 +19,8 @@ def send_outreach(
     usage  # anthropic response.usage
 ) -> dict:
     cost_usd = (
-        usage.input_tokens  * COST_PER_INPUT_TOKEN +
-        usage.output_tokens * COST_PER_OUTPUT_TOKEN
+        usage.get("prompt_tokens", 0)  * COST_PER_INPUT_TOKEN +
+        usage.get("completion_tokens", 0) * COST_PER_OUTPUT_TOKEN
     )
     trace = langfuse.trace(
         name="email-outreach",
@@ -35,7 +35,7 @@ def send_outreach(
     )
     start = time.time()
     result = resend.Emails.send({
-        "from":    "outreach@tenacious.dev",
+        "from":    "onboarding@resend.dev",
         "to":      prospect["email"],
         "subject": email_content["subject"],
         "html":    email_content["body"],

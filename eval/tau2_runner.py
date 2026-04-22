@@ -5,6 +5,13 @@ import statistics
 import subprocess
 import sys
 
+# Day 0 Hotfix: Patch audioop for Python 3.14+
+try:
+    import audioop_lts
+    sys.modules['audioop'] = audioop_lts
+except ImportError:
+    pass
+
 from langfuse import Langfuse
 
 langfuse = Langfuse(
@@ -18,36 +25,60 @@ def run_tau2_task(task: dict, model: str) -> dict:
     Thin wrapper around the tau2-bench CLI for a single task.
     Returns {"pass": bool, "cost": float, "latency_ms": float}
     """
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src"
+
+    save_file = f"eval/tmp/task_{task.get('id', 0)}.json"
     cmd = [
-        sys.executable, "run_eval.py",
+        sys.executable, "-m", "tau2.cli", "run",
         "--domain",    "retail",
-        "--num_tasks", "1",
-        "--trials",    "1",
-        "--model",     model,
-        "--task_id",   str(task.get("id", 0)),
-        "--output_dir", "./eval/tmp/"
+        "--agent-llm", model,
+        "--task-ids",  str(task.get("id", 0)),
+        "--save-to",   save_file
     ]
     start = time.time()
     try:
+        # Ensure directory exists
+        os.makedirs("eval/tmp", exist_ok=True)
+        
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=300,
-            cwd="tau2-bench"
+            cwd="tau2-bench",
+            env=env
         )
         latency_ms = (time.time() - start) * 1000
-        # Parse output — tau2 writes JSON to stdout or a result file
-        output = result.stdout
-        passed = '"pass": true' in output.lower() or '"reward": 1' in output.lower()
-        # Approximate cost from token counts if available
+        
+        # Tau2 saves to data/simulations/<save_to>/results.json
+        results_path = os.path.join("tau2-bench", "data", "simulations", save_file)
+        if not results_path.endswith(".json"):
+            results_path = os.path.join(results_path, "results.json")
+        elif os.path.isdir(results_path):
+            results_path = os.path.join(results_path, "results.json")
+            
+        passed = False
         cost = 0.0
-        for line in output.splitlines():
-            if "cost" in line.lower():
-                try:
-                    cost = float(line.split(":")[-1].strip().replace(",", ""))
-                except ValueError:
-                    pass
+        
+        if os.path.exists(results_path):
+            with open(results_path, "r") as f:
+                data = json.load(f)
+                # Structure of results.json: {"simulations": [...]}
+                if "simulations" in data and len(data["simulations"]) > 0:
+                    sim = data["simulations"][0]
+                    passed = sim.get("reward", 0.0) >= 1.0
+                    cost = sim.get("agent_cost", 0.0)
+        else:
+            # Fallback to output parsing if file not found
+            output = result.stdout + "\n" + result.stderr
+            passed = '"reward": 1.0' in output or '✅ 1.0000' in output
+            for line in output.splitlines():
+                if "cost" in line.lower():
+                    try:
+                        cost = float(line.split(":")[-1].strip().replace(",", "").replace("$", ""))
+                    except: pass
+
         return {"pass": passed, "cost": cost, "latency_ms": latency_ms}
     except subprocess.TimeoutExpired:
         return {"pass": False, "cost": 0.0, "latency_ms": 300000.0}
@@ -150,5 +181,5 @@ if __name__ == "__main__":
     parser.add_argument("--model",     default="openai/gpt-4o-mini")
     parser.add_argument("--num_tasks", type=int, default=30)
     parser.add_argument("--trials",    type=int, default=5)
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
     run_bench(args.model, args.num_tasks, args.trials)

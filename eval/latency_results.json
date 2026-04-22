@@ -1,0 +1,412 @@
+{
+  "p50_ms": 2866.6,
+  "p95_ms": 4186.0,
+  "cost_per_prospect_usd": 0.00054,
+  "total_cost_20_runs_usd": 0.0109,
+  "tenacious_target_usd": 5.0,
+  "kill_switch_usd": 8.0,
+  "within_target": true,
+  "kill_switch_triggered": false,
+  "runs": [
+    {
+      "run_id": 1,
+      "latency_ms": 2921.2,
+      "input_tokens": 868,
+      "output_tokens": 114,
+      "cost_usd": 0.0002,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 2,
+      "latency_ms": 2784.5,
+      "input_tokens": 868,
+      "output_tokens": 126,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 3,
+      "latency_ms": 3564.5,
+      "input_tokens": 868,
+      "output_tokens": 169,
+      "cost_usd": 0.00023,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 4,
+      "latency_ms": 6439.3,
+      "input_tokens": 868,
+      "output_tokens": 135,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 5,
+      "latency_ms": 6286.9,
+      "input_tokens": 868,
+      "output_tokens": 157,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 6,
+      "latency_ms": 3036.3,
+      "input_tokens": 868,
+      "output_tokens": 150,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 7,
+      "latency_ms": 3915.4,
+      "input_tokens": 868,
+      "output_tokens": 163,
+      "cost_usd": 0.00023,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 8,
+      "latency_ms": 3660.1,
+      "input_tokens": 868,
+      "output_tokens": 134,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 9,
+      "latency_ms": 4003.4,
+      "input_tokens": 868,
+      "output_tokens": 144,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 10,
+      "latency_ms": 3160.3,
+      "input_tokens": 868,
+      "output_tokens": 137,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 11,
+      "latency_ms": 4186.0,
+      "input_tokens": 868,
+      "output_tokens": 147,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 12,
+      "latency_ms": 3161.8,
+      "input_tokens": 868,
+      "output_tokens": 159,
+      "cost_usd": 0.00023,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 13,
+      "latency_ms": 2751.4,
+      "input_tokens": 868,
+      "output_tokens": 156,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 14,
+      "latency_ms": 2416.4,
+      "input_tokens": 868,
+      "output_tokens": 132,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 15,
+      "latency_ms": 2841.8,
+      "input_tokens": 868,
+      "output_tokens": 153,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 16,
+      "latency_ms": 3240.1,
+      "input_tokens": 868,
+      "output_tokens": 137,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 17,
+      "latency_ms": 2853.5,
+      "input_tokens": 868,
+      "output_tokens": 153,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 18,
+      "latency_ms": 3701.2,
+      "input_tokens": 868,
+      "output_tokens": 143,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 19,
+      "latency_ms": 2812.3,
+      "input_tokens": 868,
+      "output_tokens": 162,
+      "cost_usd": 0.00023,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 20,
+      "latency_ms": 3101.2,
+      "input_tokens": 868,
+      "output_tokens": 151,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 21,
+      "latency_ms": 2548.3,
+      "input_tokens": 868,
+      "output_tokens": 132,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 22,
+      "latency_ms": 3220.8,
+      "input_tokens": 868,
+      "output_tokens": 136,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 23,
+      "latency_ms": 2265.9,
+      "input_tokens": 868,
+      "output_tokens": 137,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 24,
+      "latency_ms": 3848.6,
+      "input_tokens": 868,
+      "output_tokens": 143,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 25,
+      "latency_ms": 2734.5,
+      "input_tokens": 868,
+      "output_tokens": 131,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 26,
+      "latency_ms": 2895.7,
+      "input_tokens": 868,
+      "output_tokens": 146,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 27,
+      "latency_ms": 2853.3,
+      "input_tokens": 868,
+      "output_tokens": 173,
+      "cost_usd": 0.00023,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 28,
+      "latency_ms": 2711.2,
+      "input_tokens": 868,
+      "output_tokens": 136,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 29,
+      "latency_ms": 2434.0,
+      "input_tokens": 868,
+      "output_tokens": 157,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 30,
+      "latency_ms": 2865.4,
+      "input_tokens": 868,
+      "output_tokens": 147,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 31,
+      "latency_ms": 3144.5,
+      "input_tokens": 868,
+      "output_tokens": 157,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 32,
+      "latency_ms": 2866.1,
+      "input_tokens": 868,
+      "output_tokens": 144,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 33,
+      "latency_ms": 2298.8,
+      "input_tokens": 868,
+      "output_tokens": 132,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 34,
+      "latency_ms": 2525.8,
+      "input_tokens": 868,
+      "output_tokens": 124,
+      "cost_usd": 0.0002,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 35,
+      "latency_ms": 2867.0,
+      "input_tokens": 868,
+      "output_tokens": 138,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 36,
+      "latency_ms": 2660.5,
+      "input_tokens": 868,
+      "output_tokens": 146,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 37,
+      "latency_ms": 2272.5,
+      "input_tokens": 868,
+      "output_tokens": 115,
+      "cost_usd": 0.0002,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 38,
+      "latency_ms": 2836.5,
+      "input_tokens": 868,
+      "output_tokens": 166,
+      "cost_usd": 0.00023,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 39,
+      "latency_ms": 2545.8,
+      "input_tokens": 868,
+      "output_tokens": 154,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 40,
+      "latency_ms": 3249.1,
+      "input_tokens": 868,
+      "output_tokens": 138,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 41,
+      "latency_ms": 2557.2,
+      "input_tokens": 868,
+      "output_tokens": 150,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 42,
+      "latency_ms": 2723.0,
+      "input_tokens": 868,
+      "output_tokens": 147,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 43,
+      "latency_ms": 3114.0,
+      "input_tokens": 868,
+      "output_tokens": 142,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 44,
+      "latency_ms": 3437.7,
+      "input_tokens": 868,
+      "output_tokens": 134,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 45,
+      "latency_ms": 3433.4,
+      "input_tokens": 868,
+      "output_tokens": 154,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 46,
+      "latency_ms": 3308.1,
+      "input_tokens": 868,
+      "output_tokens": 145,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 47,
+      "latency_ms": 2838.9,
+      "input_tokens": 868,
+      "output_tokens": 177,
+      "cost_usd": 0.00024,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 48,
+      "latency_ms": 2780.7,
+      "input_tokens": 868,
+      "output_tokens": 156,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 49,
+      "latency_ms": 2807.4,
+      "input_tokens": 868,
+      "output_tokens": 132,
+      "cost_usd": 0.00021,
+      "event_type": "email_compose"
+    },
+    {
+      "run_id": 50,
+      "latency_ms": 3358.5,
+      "input_tokens": 868,
+      "output_tokens": 155,
+      "cost_usd": 0.00022,
+      "event_type": "email_compose"
+    }
+  ]
+}

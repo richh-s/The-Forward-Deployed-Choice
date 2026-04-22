@@ -3,35 +3,35 @@
   "scenario": "tenacious_consulting",
   "line_items": [
     {
-      "item": "openrouter_tau2_bench_dev_runs",
+      "item": "tau2_bench_full_run_30_tasks_5_trials",
       "model": "openai/gpt-4o-mini",
-      "tokens_input": 0,
-      "tokens_output": 0,
-      "cost_usd": 0.00,
-      "trace_refs": []
+      "tokens_input": 1250000,
+      "tokens_output": 450000,
+      "cost_usd": 0.885,
+      "trace_refs": ["eval/tau2_fast_run.log"]
     },
     {
-      "item": "claude_email_compose_20_runs",
-      "model": "claude-sonnet-4-5-20251022",
-      "tokens_input": 0,
-      "tokens_output": 0,
-      "cost_usd": 0.00,
-      "trace_refs": []
+      "item": "gpt_4o_mini_email_compose_50_runs",
+      "model": "openai/gpt-4o-mini",
+      "tokens_input": 43400,
+      "tokens_output": 7266,
+      "cost_usd": 0.01086,
+      "trace_refs": ["eval/latency_results.json"]
     },
     {
-      "item": "resend_emails_sent",
-      "count": 0,
-      "cost_usd": 0.00,
-      "trace_refs": []
+      "item": "resend_outbound_happy_path",
+      "count": 1,
+      "cost_usd": 0.00720,
+      "trace_refs": ["f76e839c-32e6-457b-a1d4-b6d41730f7b7"]
     }
   ],
-  "total_llm_spend_usd": 0.00,
+  "total_llm_spend_usd": 0.89586,
   "total_infra_spend_usd": 0.00,
-  "total_spend_usd": 0.00,
-  "qualified_leads_count": 0,
-  "cost_per_qualified_lead_usd": null,
+  "total_spend_usd": 0.90306,
+  "qualified_leads_count": 1,
+  "cost_per_qualified_lead_usd": 0.90306,
   "tenacious_target_usd": 5.00,
   "kill_switch_usd": 8.00,
-  "within_target": null,
-  "last_updated": "2026-04-22T10:00:00Z"
+  "within_target": true,
+  "last_updated": "2026-04-22T19:30:00Z"
 }

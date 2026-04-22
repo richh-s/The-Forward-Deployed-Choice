@@ -3,40 +3,44 @@ import json
 import statistics
 import os
 
-import anthropic
+import openai
 from enrichment.mock_brief import HIRING_SIGNAL_BRIEF, COMPETITOR_GAP_BRIEF, BENCH_SUMMARY
 from agent.email_agent import SYSTEM_PROMPT
 
-client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+client = openai.OpenAI(
+    base_url=os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
+    api_key=os.environ["OPENAI_API_KEY"]
+)
 
-COST_PER_INPUT_TOKEN  = 0.000003
-COST_PER_OUTPUT_TOKEN = 0.000015
+COST_PER_INPUT_TOKEN  = 0.00000015  # gpt-4o-mini approx
+COST_PER_OUTPUT_TOKEN = 0.0000006   # gpt-4o-mini approx
 
 latencies, costs, traces = [], [], []
+N_RUNS = 50
 
-for i in range(20):
+for i in range(N_RUNS):
     start = time.time()
-    response = client.messages.create(
-        model="claude-sonnet-4-5-20251022",
-        max_tokens=600,
-        system=SYSTEM_PROMPT,
-        messages=[{
-            "role":    "user",
-            "content": f"Compose outreach email. Brief: {json.dumps(HIRING_SIGNAL_BRIEF)}"
-        }]
+    response = client.chat.completions.create(
+        model="openai/gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": f"Compose outreach email in JSON format. Brief: {json.dumps(HIRING_SIGNAL_BRIEF)}"}
+        ],
+        max_tokens=600
     )
     latency_ms = (time.time() - start) * 1000
+    usage = response.usage
     cost_usd = (
-        response.usage.input_tokens  * COST_PER_INPUT_TOKEN +
-        response.usage.output_tokens * COST_PER_OUTPUT_TOKEN
+        usage.prompt_tokens  * COST_PER_INPUT_TOKEN +
+        usage.completion_tokens * COST_PER_OUTPUT_TOKEN
     )
     latencies.append(latency_ms)
     costs.append(cost_usd)
     traces.append({
         "run_id":        i + 1,
         "latency_ms":    round(latency_ms, 1),
-        "input_tokens":  response.usage.input_tokens,
-        "output_tokens": response.usage.output_tokens,
+        "input_tokens":  usage.prompt_tokens,
+        "output_tokens": usage.completion_tokens,
         "cost_usd":      round(cost_usd, 5),
         "event_type":    "email_compose"
     })
