@@ -1,0 +1,79 @@
+{
+  "company": "NovaPay Technologies",
+  "crunchbase_id": "novapay-technologies",
+  "last_enriched_at": "2026-04-22T10:00:00Z",
+  "firmographics": {
+    "employees": 52,
+    "industry": "Fintech",
+    "location": "Austin, TX",
+    "funding_total_usd": 16000000,
+    "last_funding_date": "2026-02-14",
+    "last_funding_type": "Series B"
+  },
+  "signals": {
+    "signal_1_funding_event": {
+      "present": true,
+      "days_ago": 67,
+      "amount_usd": 16000000,
+      "round_type": "Series B",
+      "confidence": "high",
+      "source": "crunchbase_odm"
+    },
+    "signal_2_job_post_velocity": {
+      "open_roles_total": 14,
+      "engineering_roles": 9,
+      "delta_60d": "+9",
+      "confidence": "medium",
+      "source": "wellfound_scrape",
+      "honesty_note": "9 roles qualifies as growing \u2014 do not assert 'aggressive hiring'"
+    },
+    "signal_3_layoff_event": {
+      "present": false,
+      "confidence": "high",
+      "source": "layoffs_fyi"
+    },
+    "signal_4_leadership_change": {
+      "present": true,
+      "role": "VP Engineering",
+      "days_ago": 38,
+      "confidence": "medium",
+      "source": "crunchbase_press"
+    },
+    "signal_5_ai_maturity": {
+      "score": 2,
+      "justification": [
+        {
+          "signal": "ai_adjacent_open_roles",
+          "weight": "high",
+          "detail": "3 open ML engineer roles of 9 engineering roles"
+        },
+        {
+          "signal": "named_ai_leadership",
+          "weight": "high",
+          "detail": "Head of AI on public team page"
+        },
+        {
+          "signal": "modern_ml_stack",
+          "weight": "low",
+          "detail": "Snowflake + dbt via BuiltWith"
+        }
+      ],
+      "confidence": "medium"
+    },
+    "signal_6_icp_segment": {
+      "segment": "recently_funded",
+      "segment_number": 1,
+      "label": "Segment 1 \u2014 High Growth / Recently Funded",
+      "pitch_language": "scale your AI team faster than in-house hiring",
+      "confidence": "high",
+      "rationale": "Series B closed 67d ago. No layoff. 9 open engineering roles. AI maturity 2/3 sets pitch language.",
+      "conflict_flag": true,
+      "conflict_note": "Matches ['Segment 1 \u2014 High Growth / Recently Funded', 'Segment 3 \u2014 New Engineering Leadership', 'Segment 4 \u2014 AI / ML Capability Gap']. Using highest-priority segment. Human review recommended.",
+      "all_matched_segments": [
+        "Segment 1 \u2014 High Growth / Recently Funded",
+        "Segment 3 \u2014 New Engineering Leadership",
+        "Segment 4 \u2014 AI / ML Capability Gap"
+      ]
+    }
+  }
+}

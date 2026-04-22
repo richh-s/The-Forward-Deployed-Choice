@@ -1,0 +1,94 @@
+{
+  "version": "1.0",
+  "scenario": "tenacious_consulting",
+  "generated_at": "2026-04-22T20:00:00Z",
+  "claims": [
+    {
+      "claim_id": "C001",
+      "claim_text": "τ²-Bench pass@1 = X% (95% CI: X%–X%)",
+      "grading_observable": "reproduction_fidelity",
+      "value": null,
+      "source_type": "score_log",
+      "source_ref": "eval/score_log.json#run_001.pass_at_1_mean",
+      "langfuse_trace_ids": [],
+      "recomputable": true,
+      "computation": "mean(pass_results_5_trials_30_tasks)"
+    },
+    {
+      "claim_id": "C002",
+      "claim_text": "p50 latency = Xms across 20 email interactions",
+      "grading_observable": "cost_quality_pareto",
+      "value": null,
+      "source_type": "latency_log",
+      "source_ref": "eval/latency_results.json#p50_ms",
+      "langfuse_trace_ids": [],
+      "recomputable": true,
+      "computation": "median(latency_ms, n=20)"
+    },
+    {
+      "claim_id": "C003",
+      "claim_text": "p95 latency = Xms across 20 email interactions",
+      "grading_observable": "cost_quality_pareto",
+      "value": null,
+      "source_type": "latency_log",
+      "source_ref": "eval/latency_results.json#p95_ms",
+      "langfuse_trace_ids": [],
+      "recomputable": true,
+      "computation": "percentile(latency_ms, 0.95, n=20)"
+    },
+    {
+      "claim_id": "C004",
+      "claim_text": "Cost per prospect = $X — within $5.00 Tenacious target",
+      "grading_observable": "cost_quality_pareto",
+      "value": null,
+      "unit": "USD",
+      "source_type": "computed",
+      "source_ref": "eval/latency_results.json#cost_per_prospect_usd",
+      "supporting_sources": [
+        "invoice_summary.json#total_llm_spend_usd",
+        "eval/trace_log.jsonl#email_compose_events"
+      ],
+      "langfuse_trace_ids": [],
+      "recomputable": true,
+      "computation": "total_llm_spend_usd / 20_prospects",
+      "thresholds": {
+        "target_usd": 5.00,
+        "kill_switch_usd": 8.00,
+        "penalty_above_usd": 8.00
+      }
+    },
+    {
+      "claim_id": "C005",
+      "claim_text": "HubSpot contact created — all 22 fields non-null, enrichment timestamp current",
+      "grading_observable": "evidence_graph_integrity",
+      "value": null,
+      "source_type": "screenshot",
+      "source_ref": "screenshots/hubspot_contact_20260422.png",
+      "langfuse_trace_ids": [],
+      "recomputable": false,
+      "computation": "manual_screenshot_verification"
+    },
+    {
+      "claim_id": "C006",
+      "claim_text": "Cal.com booking created — both attendees listed",
+      "grading_observable": "evidence_graph_integrity",
+      "value": null,
+      "source_type": "screenshot",
+      "source_ref": "screenshots/calcom_booking_20260422.png",
+      "langfuse_trace_ids": [],
+      "recomputable": false,
+      "computation": "manual_screenshot_verification"
+    },
+    {
+      "claim_id": "C007",
+      "claim_text": "Six enrichment signals all producing output for test prospect",
+      "grading_observable": "evidence_graph_integrity",
+      "value": "novapay-technologies",
+      "source_type": "json_file",
+      "source_ref": "data/hiring_signal_brief_novapay.json",
+      "langfuse_trace_ids": [],
+      "recomputable": true,
+      "computation": "count(signals where output != null) == 6"
+    }
+  ]
+}

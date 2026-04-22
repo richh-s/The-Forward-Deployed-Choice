@@ -1,0 +1,39 @@
+{
+  "company": "NovaPay Technologies",
+  "sector": "Fintech",
+  "sector_size_band": "Series_A_B",
+  "prospect_ai_maturity": 2,
+  "sector_top_quartile_maturity": 3,
+  "competitors_sampled": [
+    {
+      "name": "Stripe",
+      "ai_maturity": 3,
+      "confidence": "high"
+    },
+    {
+      "name": "Plaid",
+      "ai_maturity": 3,
+      "confidence": "high"
+    },
+    {
+      "name": "Brex",
+      "ai_maturity": 2,
+      "confidence": "medium"
+    }
+  ],
+  "gaps": [
+    {
+      "gap": "No dedicated ML platform team",
+      "evidence": "0 ML platform roles vs avg 4+ at top-quartile peers",
+      "confidence": "medium",
+      "agent_instruction": "Say 'peers like Stripe have invested in dedicated ML platform teams' \u2014 not 'you are behind'"
+    },
+    {
+      "gap": "No public AI product roadmap signal",
+      "evidence": "3 of 5 sampled competitors have CTO AI commentary in last 90 days",
+      "confidence": "medium",
+      "agent_instruction": "Frame as opportunity, not criticism"
+    }
+  ],
+  "generated_at": "2026-04-22T10:00:00Z"
+}

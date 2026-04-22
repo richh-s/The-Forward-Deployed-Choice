@@ -1,0 +1,39 @@
+[
+  {
+    "uuid": "novapay-technologies-uuid-001",
+    "name": "NovaPay Technologies",
+    "last_funding_at": "2026-02-14",
+    "last_funding_total_usd": 16000000,
+    "last_funding_type": "Series B",
+    "total_funding_usd": 24000000,
+    "num_employees_enum": "51-100",
+    "category_list": "Fintech,Payments",
+    "city": "Austin",
+    "region": "TX",
+    "people": [
+      {
+        "name": "Jordan Kim",
+        "title": "VP Engineering",
+        "started_on": "2026-03-15"
+      },
+      {
+        "name": "Alex Rivera",
+        "title": "CEO",
+        "started_on": "2022-01-10"
+      }
+    ]
+  },
+  {
+    "uuid": "acme-corp-uuid-002",
+    "name": "Acme Corp",
+    "last_funding_at": "2025-06-01",
+    "last_funding_total_usd": 5000000,
+    "last_funding_type": "Series A",
+    "total_funding_usd": 7000000,
+    "num_employees_enum": "11-50",
+    "category_list": "SaaS,Enterprise",
+    "city": "San Francisco",
+    "region": "CA",
+    "people": []
+  }
+]

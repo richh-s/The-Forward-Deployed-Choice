@@ -1,0 +1,37 @@
+{
+  "period": "2026-04-22",
+  "scenario": "tenacious_consulting",
+  "line_items": [
+    {
+      "item": "openrouter_tau2_bench_dev_runs",
+      "model": "openai/gpt-4o-mini",
+      "tokens_input": 0,
+      "tokens_output": 0,
+      "cost_usd": 0.00,
+      "trace_refs": []
+    },
+    {
+      "item": "claude_email_compose_20_runs",
+      "model": "claude-sonnet-4-5-20251022",
+      "tokens_input": 0,
+      "tokens_output": 0,
+      "cost_usd": 0.00,
+      "trace_refs": []
+    },
+    {
+      "item": "resend_emails_sent",
+      "count": 0,
+      "cost_usd": 0.00,
+      "trace_refs": []
+    }
+  ],
+  "total_llm_spend_usd": 0.00,
+  "total_infra_spend_usd": 0.00,
+  "total_spend_usd": 0.00,
+  "qualified_leads_count": 0,
+  "cost_per_qualified_lead_usd": null,
+  "tenacious_target_usd": 5.00,
+  "kill_switch_usd": 8.00,
+  "within_target": null,
+  "last_updated": "2026-04-22T10:00:00Z"
+}

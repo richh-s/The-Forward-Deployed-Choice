@@ -1,0 +1,16 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+env/
+*.egg-info/
+*.egg-info/
+dist/
+build/
+.DS_Store
+eval/tmp/
+tau2-bench/
+node_modules/
