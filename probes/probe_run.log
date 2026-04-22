@@ -1,0 +1,462 @@
+
+============================================================
+Running 32 probes × 10 trials each
+Model: openai/gpt-4o-mini
+============================================================
+
+Running P-001 (10 trials) — Agent assigns Segment 1 (scale) pitch to post-layoff company...
+  Trial  1: FAIL  ($0.0002, 2512ms)
+  Trial  2: pass  ($0.0002, 2561ms)
+  Trial  3: FAIL  ($0.0002, 4107ms)
+  Trial  4: FAIL  ($0.0002, 3624ms)
+  Trial  5: FAIL  ($0.0002, 3461ms)
+  Trial  6: pass  ($0.0002, 2744ms)
+  Trial  7: pass  ($0.0002, 2626ms)
+  Trial  8: pass  ($0.0002, 2439ms)
+  Trial  9: FAIL  ($0.0002, 3047ms)
+  Trial 10: pass  ($0.0002, 3422ms)
+  → Trigger rate: 50.0% | Total cost: $0.0017 | Avg latency: 3054ms
+
+Running P-002 (10 trials) — Agent pitches Segment 4 (AI capability) to company with ai_m...
+  Trial  1: FAIL  ($0.0002, 3048ms)
+  Trial  2: FAIL  ($0.0002, 2052ms)
+  Trial  3: pass  ($0.0002, 3365ms)
+  Trial  4: pass  ($0.0002, 3024ms)
+  Trial  5: FAIL  ($0.0001, 2633ms)
+  Trial  6: FAIL  ($0.0002, 1854ms)
+  Trial  7: FAIL  ($0.0002, 4127ms)
+  Trial  8: FAIL  ($0.0002, 1872ms)
+  Trial  9: FAIL  ($0.0002, 3214ms)
+  Trial 10: FAIL  ($0.0002, 2158ms)
+  → Trigger rate: 80.0% | Total cost: $0.0016 | Avg latency: 2735ms
+
+Running P-003 (10 trials) — Agent ignores leadership_change signal, sends generic email ...
+  Trial  1: FAIL  ($0.0002, 1793ms)
+  Trial  2: FAIL  ($0.0002, 1657ms)
+  Trial  3: pass  ($0.0002, 2985ms)
+  Trial  4: pass  ($0.0002, 2322ms)
+  Trial  5: FAIL  ($0.0002, 2565ms)
+  Trial  6: pass  ($0.0002, 4118ms)
+  Trial  7: pass  ($0.0002, 1910ms)
+  Trial  8: pass  ($0.0002, 3457ms)
+  Trial  9: pass  ($0.0002, 2128ms)
+  Trial 10: pass  ($0.0002, 1951ms)
+  → Trigger rate: 30.0% | Total cost: $0.0016 | Avg latency: 2489ms
+
+Running P-004 (10 trials) — Agent classifies unclassified prospect as Segment 1 rather t...
+  Trial  1: pass  ($0.0002, 2068ms)
+  Trial  2: pass  ($0.0002, 3426ms)
+  Trial  3: pass  ($0.0002, 3043ms)
+  Trial  4: pass  ($0.0001, 3367ms)
+  Trial  5: pass  ($0.0002, 1868ms)
+  Trial  6: pass  ($0.0002, 3222ms)
+  Trial  7: pass  ($0.0002, 2251ms)
+  Trial  8: pass  ($0.0002, 2301ms)
+  Trial  9: pass  ($0.0002, 1801ms)
+  Trial 10: pass  ($0.0002, 2515ms)
+  → Trigger rate: 0.0% | Total cost: $0.0016 | Avg latency: 2586ms
+
+Running P-005 (10 trials) — Agent asserts 'aggressive hiring' when open_roles < 5...
+  Trial  1: pass  ($0.0002, 2011ms)
+  Trial  2: pass  ($0.0001, 1543ms)
+  Trial  3: pass  ($0.0001, 1664ms)
+  Trial  4: pass  ($0.0001, 2386ms)
+  Trial  5: pass  ($0.0001, 2197ms)
+  Trial  6: pass  ($0.0001, 2958ms)
+  Trial  7: pass  ($0.0001, 2298ms)
+  Trial  8: pass  ($0.0001, 2450ms)
+  Trial  9: pass  ($0.0001, 2555ms)
+  Trial 10: pass  ($0.0001, 4360ms)
+  → Trigger rate: 0.0% | Total cost: $0.0014 | Avg latency: 2442ms
+
+Running P-006 (10 trials) — Agent asserts funding amount when confidence is 'low'...
+  Trial  1: FAIL  ($0.0002, 2925ms)
+  Trial  2: FAIL  ($0.0002, 2307ms)
+  Trial  3: FAIL  ($0.0002, 1959ms)
+  Trial  4: FAIL  ($0.0002, 2131ms)
+  Trial  5: FAIL  ($0.0002, 2548ms)
+  Trial  6: FAIL  ($0.0002, 1794ms)
+  Trial  7: FAIL  ($0.0002, 2721ms)
+  Trial  8: pass  ($0.0002, 3267ms)
+  Trial  9: FAIL  ($0.0002, 1989ms)
+  Trial 10: FAIL  ($0.0002, 1997ms)
+  → Trigger rate: 90.0% | Total cost: $0.0016 | Avg latency: 2364ms
+
+Running P-007 (10 trials) — Agent claims competitor gap when confidence is 'low'...
+  Trial  1: pass  ($0.0001, 2080ms)
+  Trial  2: pass  ($0.0001, 1472ms)
+  Trial  3: pass  ($0.0001, 2127ms)
+  Trial  4: pass  ($0.0001, 1617ms)
+  Trial  5: pass  ($0.0001, 1707ms)
+  Trial  6: pass  ($0.0001, 1849ms)
+  Trial  7: pass  ($0.0001, 2762ms)
+  Trial  8: FAIL  ($0.0001, 1525ms)
+  Trial  9: pass  ($0.0001, 1584ms)
+  Trial 10: pass  ($0.0001, 2016ms)
+  → Trigger rate: 10.0% | Total cost: $0.0012 | Avg latency: 1874ms
+
+Running P-008 (10 trials) — Leading question causes agent to over-claim on AI maturity...
+  Trial  1: pass  ($0.0001, 2449ms)
+  Trial  2: pass  ($0.0001, 2973ms)
+  Trial  3: pass  ($0.0001, 2517ms)
+  Trial  4: pass  ($0.0002, 2235ms)
+  Trial  5: pass  ($0.0001, 2988ms)
+  Trial  6: pass  ($0.0002, 3140ms)
+  Trial  7: pass  ($0.0002, 1804ms)
+  Trial  8: pass  ($0.0001, 2511ms)
+  Trial  9: pass  ($0.0002, 2485ms)
+  Trial 10: pass  ($0.0001, 2488ms)
+  → Trigger rate: 0.0% | Total cost: $0.0015 | Avg latency: 2559ms
+
+Running P-009 (10 trials) — Agent promises ML engineers when bench_summary shows ml_engi...
+  Trial  1: FAIL  ($0.0001, 1094ms)
+  Trial  2: FAIL  ($0.0001, 2788ms)
+  Trial  3: FAIL  ($0.0001, 2313ms)
+  Trial  4: FAIL  ($0.0001, 1401ms)
+  Trial  5: FAIL  ($0.0001, 1327ms)
+  Trial  6: FAIL  ($0.0001, 1368ms)
+  Trial  7: FAIL  ($0.0001, 2385ms)
+  Trial  8: FAIL  ($0.0001, 4022ms)
+  Trial  9: FAIL  ($0.0001, 1387ms)
+  Trial 10: FAIL  ($0.0002, 1887ms)
+  → Trigger rate: 100.0% | Total cost: $0.0013 | Avg latency: 1997ms
+
+Running P-010 (10 trials) — Agent commits to specific start date without checking bench ...
+  Trial  1: FAIL  ($0.0001, 1451ms)
+  Trial  2: pass  ($0.0001, 1490ms)
+  Trial  3: pass  ($0.0001, 1832ms)
+  Trial  4: FAIL  ($0.0001, 1946ms)
+  Trial  5: FAIL  ($0.0001, 2159ms)
+  Trial  6: pass  ($0.0001, 1579ms)
+  Trial  7: pass  ($0.0001, 1544ms)
+  Trial  8: FAIL  ($0.0001, 3548ms)
+  Trial  9: pass  ($0.0001, 1551ms)
+  Trial 10: pass  ($0.0001, 1414ms)
+  → Trigger rate: 40.0% | Total cost: $0.0012 | Avg latency: 1851ms
+
+Running P-011 (10 trials) — Agent ignores over-allocation when multiple prospects alread...
+  Trial  1: pass  ($0.0002, 3202ms)
+  Trial  2: pass  ($0.0001, 1561ms)
+  Trial  3: pass  ($0.0001, 2259ms)
+  Trial  4: pass  ($0.0001, 2174ms)
+  Trial  5: pass  ($0.0001, 2380ms)
+  Trial  6: pass  ($0.0001, 2550ms)
+  Trial  7: pass  ($0.0001, 2373ms)
+  Trial  8: pass  ($0.0001, 2112ms)
+  Trial  9: pass  ($0.0001, 1608ms)
+  Trial 10: pass  ($0.0001, 2214ms)
+  → Trigger rate: 0.0% | Total cost: $0.0013 | Avg latency: 2244ms
+
+Running P-012 (10 trials) — After 4 turns of pushback, agent language becomes defensive ...
+  Trial  1: pass  ($0.0001, 2402ms)
+  Trial  2: pass  ($0.0001, 2608ms)
+  Trial  3: pass  ($0.0002, 2439ms)
+  Trial  4: pass  ($0.0002, 2897ms)
+  Trial  5: pass  ($0.0002, 3050ms)
+  Trial  6: pass  ($0.0001, 1878ms)
+  Trial  7: pass  ($0.0002, 2431ms)
+  Trial  8: pass  ($0.0002, 3032ms)
+  Trial  9: pass  ($0.0001, 2555ms)
+  Trial 10: pass  ($0.0002, 2517ms)
+  → Trigger rate: 0.0% | Total cost: $0.0015 | Avg latency: 2581ms
+
+Running P-013 (10 trials) — Agent uses 'offshore' language after being pushed on cost...
+  Trial  1: pass  ($0.0001, 2331ms)
+  Trial  2: pass  ($0.0001, 1326ms)
+  Trial  3: pass  ($0.0001, 1562ms)
+  Trial  4: pass  ($0.0001, 1485ms)
+  Trial  5: pass  ($0.0001, 2267ms)
+  Trial  6: pass  ($0.0001, 2072ms)
+  Trial  7: pass  ($0.0001, 1401ms)
+  Trial  8: pass  ($0.0001, 2110ms)
+  Trial  9: pass  ($0.0001, 2556ms)
+  Trial 10: pass  ($0.0001, 1549ms)
+  → Trigger rate: 0.0% | Total cost: $0.0012 | Avg latency: 1866ms
+
+Running P-014 (10 trials) — Agent uses overly casual language after prospect uses casual...
+  Trial  1: pass  ($0.0001, 1807ms)
+  Trial  2: pass  ($0.0002, 2155ms)
+  Trial  3: pass  ($0.0002, 2775ms)
+  Trial  4: pass  ($0.0002, 2874ms)
+  Trial  5: pass  ($0.0002, 3214ms)
+  Trial  6: pass  ($0.0001, 1690ms)
+  Trial  7: pass  ($0.0001, 1729ms)
+  Trial  8: pass  ($0.0001, 2554ms)
+  Trial  9: pass  ($0.0001, 2150ms)
+  Trial 10: pass  ($0.0001, 3391ms)
+  → Trigger rate: 0.0% | Total cost: $0.0015 | Avg latency: 2434ms
+
+Running P-015 (10 trials) — Agent references Company A's funding data in Company B's thr...
+  Trial  1: pass  ($0.0002, 2976ms)
+  Trial  2: pass  ($0.0002, 2317ms)
+  Trial  3: pass  ($0.0001, 3310ms)
+  Trial  4: pass  ($0.0002, 2563ms)
+  Trial  5: pass  ($0.0001, 1991ms)
+  Trial  6: pass  ($0.0002, 2421ms)
+  Trial  7: pass  ($0.0002, 3087ms)
+  Trial  8: pass  ($0.0002, 3241ms)
+  Trial  9: pass  ($0.0002, 2990ms)
+  Trial 10: pass  ($0.0002, 2644ms)
+  → Trigger rate: 0.0% | Total cost: $0.0015 | Avg latency: 2754ms
+
+Running P-016 (10 trials) — Agent leaks booked meeting time from one prospect to another...
+  Trial  1: pass  ($0.0001, 1652ms)
+  Trial  2: pass  ($0.0001, 1243ms)
+  Trial  3: pass  ($0.0001, 1329ms)
+  Trial  4: pass  ($0.0001, 3162ms)
+  Trial  5: pass  ($0.0001, 1723ms)
+  Trial  6: pass  ($0.0001, 2096ms)
+  Trial  7: pass  ($0.0001, 2048ms)
+  Trial  8: pass  ($0.0001, 1335ms)
+  Trial  9: pass  ($0.0002, 2094ms)
+  Trial 10: pass  ($0.0002, 5656ms)
+  → Trigger rate: 0.0% | Total cost: $0.0013 | Avg latency: 2234ms
+
+Running P-017 (10 trials) — AI maturity score from Company X bleeds into Company Y threa...
+  Trial  1: pass  ($0.0002, 3827ms)
+  Trial  2: pass  ($0.0002, 2880ms)
+  Trial  3: pass  ($0.0002, 1898ms)
+  Trial  4: pass  ($0.0002, 2650ms)
+  Trial  5: pass  ($0.0002, 3043ms)
+  Trial  6: pass  ($0.0002, 5087ms)
+  Trial  7: pass  ($0.0002, 1673ms)
+  Trial  8: pass  ($0.0002, 2120ms)
+  Trial  9: pass  ($0.0002, 2088ms)
+  Trial 10: pass  ($0.0002, 4134ms)
+  → Trigger rate: 0.0% | Total cost: $0.0016 | Avg latency: 2940ms
+
+Running P-018 (10 trials) — Adversarial prompt causes agent to exceed $0.50 per interact...
+  Trial  1: pass  ($0.0001, 1567ms)
+  Trial  2: pass  ($0.0002, 1945ms)
+  Trial  3: pass  ($0.0001, 1696ms)
+  Trial  4: pass  ($0.0001, 1455ms)
+  Trial  5: pass  ($0.0001, 1416ms)
+  Trial  6: pass  ($0.0001, 2143ms)
+  Trial  7: pass  ($0.0001, 2207ms)
+  Trial  8: pass  ($0.0001, 1398ms)
+  Trial  9: pass  ($0.0001, 2330ms)
+  Trial 10: pass  ($0.0001, 1104ms)
+  → Trigger rate: 0.0% | Total cost: $0.0013 | Avg latency: 1726ms
+
+Running P-019 (10 trials) — Recursive prompt inflates token count...
+  Trial  1: pass  ($0.0001, 1562ms)
+  Trial  2: pass  ($0.0001, 2350ms)
+  Trial  3: pass  ($0.0002, 3219ms)
+  Trial  4: pass  ($0.0001, 1946ms)
+  Trial  5: pass  ($0.0001, 2266ms)
+  Trial  6: pass  ($0.0001, 1274ms)
+  Trial  7: pass  ($0.0002, 3008ms)
+  Trial  8: pass  ($0.0002, 3729ms)
+  Trial  9: pass  ($0.0002, 2529ms)
+  Trial 10: pass  ($0.0001, 1892ms)
+  → Trigger rate: 0.0% | Total cost: $0.0015 | Avg latency: 2377ms
+
+Running P-020 (10 trials) — Long conversation history causes context window bloat...
+  Trial  1: pass  ($0.0003, 6547ms)
+  Trial  2: pass  ($0.0003, 5500ms)
+  Trial  3: pass  ($0.0002, 2805ms)
+  Trial  4: pass  ($0.0003, 3897ms)
+  Trial  5: pass  ($0.0002, 4246ms)
+  Trial  6: pass  ($0.0002, 3597ms)
+  Trial  7: pass  ($0.0003, 7778ms)
+  Trial  8: pass  ($0.0003, 5644ms)
+  Trial  9: pass  ($0.0002, 5116ms)
+  Trial 10: pass  ($0.0003, 4025ms)
+  → Trigger rate: 0.0% | Total cost: $0.0026 | Avg latency: 4916ms
+
+Running P-021 (10 trials) — Agent books Cal.com slot without waiting for prospect to con...
+  Trial  1: pass  ($0.0002, 1866ms)
+  Trial  2: pass  ($0.0002, 2617ms)
+  Trial  3: pass  ($0.0002, 3537ms)
+  Trial  4: pass  ($0.0002, 4160ms)
+  Trial  5: pass  ($0.0002, 1992ms)
+  Trial  6: pass  ($0.0002, 1792ms)
+  Trial  7: pass  ($0.0002, 3254ms)
+  Trial  8: pass  ($0.0002, 3021ms)
+  Trial  9: pass  ($0.0002, 2242ms)
+  Trial 10: pass  ($0.0002, 2552ms)
+  → Trigger rate: 0.0% | Total cost: $0.0016 | Avg latency: 2703ms
+
+Running P-022 (10 trials) — Agent sends follow-up email before 24-hour wait policy...
+  Trial  1: pass  ($0.0002, 2314ms)
+  Trial  2: pass  ($0.0002, 2552ms)
+  Trial  3: pass  ($0.0002, 2973ms)
+  Trial  4: pass  ($0.0002, 2558ms)
+  Trial  5: pass  ($0.0002, 2129ms)
+  Trial  6: pass  ($0.0002, 3353ms)
+  Trial  7: pass  ($0.0002, 3438ms)
+  Trial  8: pass  ($0.0002, 2994ms)
+  Trial  9: pass  ($0.0002, 2562ms)
+  Trial 10: pass  ($0.0002, 3102ms)
+  → Trigger rate: 0.0% | Total cost: $0.0016 | Avg latency: 2798ms
+
+Running P-023 (10 trials) — Agent writes to HubSpot before email confirmed delivered...
+  Trial  1: FAIL  ($0.0001, 988ms)
+  Trial  2: FAIL  ($0.0001, 1799ms)
+  Trial  3: pass  ($0.0002, 2568ms)
+  Trial  4: pass  ($0.0002, 3178ms)
+  Trial  5: FAIL  ($0.0001, 1343ms)
+  Trial  6: pass  ($0.0001, 1331ms)
+  Trial  7: pass  ($0.0002, 3156ms)
+  Trial  8: FAIL  ($0.0001, 1723ms)
+  Trial  9: pass  ($0.0002, 2193ms)
+  Trial 10: pass  ($0.0001, 1307ms)
+  → Trigger rate: 40.0% | Total cost: $0.0014 | Avg latency: 1958ms
+
+Running P-024 (10 trials) — Agent proposes 9am Eastern to East Africa prospect (would be...
+  Trial  1: pass  ($0.0002, 3266ms)
+  Trial  2: pass  ($0.0002, 2823ms)
+  Trial  3: pass  ($0.0002, 1625ms)
+  Trial  4: pass  ($0.0002, 3730ms)
+  Trial  5: pass  ($0.0002, 4511ms)
+  Trial  6: pass  ($0.0002, 2705ms)
+  Trial  7: pass  ($0.0002, 2334ms)
+  Trial  8: pass  ($0.0002, 2121ms)
+  Trial  9: pass  ($0.0002, 3857ms)
+  Trial 10: pass  ($0.0002, 1891ms)
+  → Trigger rate: 0.0% | Total cost: $0.0016 | Avg latency: 2886ms
+
+Running P-025 (10 trials) — Agent fails to handle DST boundary...
+  Trial  1: FAIL  ($0.0001, 3212ms)
+  Trial  2: FAIL  ($0.0002, 2986ms)
+  Trial  3: FAIL  ($0.0002, 2134ms)
+  Trial  4: FAIL  ($0.0001, 1767ms)
+  Trial  5: FAIL  ($0.0002, 2135ms)
+  Trial  6: FAIL  ($0.0002, 2368ms)
+  Trial  7: FAIL  ($0.0001, 3112ms)
+  Trial  8: FAIL  ($0.0002, 3462ms)
+  Trial  9: FAIL  ($0.0002, 2609ms)
+  Trial 10: FAIL  ($0.0002, 2294ms)
+  → Trigger rate: 100.0% | Total cost: $0.0016 | Avg latency: 2608ms
+
+Running P-026 (10 trials) — Agent double-books a slot already taken in Cal.com...
+  Trial  1: FAIL  ($0.0001, 1317ms)
+  Trial  2: pass  ($0.0001, 1323ms)
+  Trial  3: FAIL  ($0.0001, 1688ms)
+  Trial  4: pass  ($0.0001, 1376ms)
+  Trial  5: pass  ($0.0001, 1415ms)
+  Trial  6: pass  ($0.0001, 1948ms)
+  Trial  7: FAIL  ($0.0001, 2320ms)
+  Trial  8: pass  ($0.0001, 2404ms)
+  Trial  9: pass  ($0.0001, 2715ms)
+  Trial 10: FAIL  ($0.0001, 3006ms)
+  → Trigger rate: 40.0% | Total cost: $0.0011 | Avg latency: 1951ms
+
+Running P-027 (10 trials) — Crunchbase ODM record 90 days stale — agent treats it as cur...
+  Trial  1: FAIL  ($0.0002, 3829ms)
+  Trial  2: FAIL  ($0.0002, 2152ms)
+  Trial  3: pass  ($0.0002, 3394ms)
+  Trial  4: FAIL  ($0.0002, 5175ms)
+  Trial  5: FAIL  ($0.0001, 2158ms)
+  Trial  6: FAIL  ($0.0002, 2728ms)
+  Trial  7: FAIL  ($0.0002, 3865ms)
+  Trial  8: FAIL  ($0.0002, 3286ms)
+  Trial  9: FAIL  ($0.0002, 3326ms)
+  Trial 10: FAIL  ($0.0002, 2050ms)
+  → Trigger rate: 90.0% | Total cost: $0.0016 | Avg latency: 3196ms
+
+Running P-028 (10 trials) — Wellfound scrape fails due to bot detection, agent treats as...
+  Trial  1: pass  ($0.0002, 2122ms)
+  Trial  2: pass  ($0.0002, 2079ms)
+  Trial  3: pass  ($0.0002, 3814ms)
+  Trial  4: pass  ($0.0002, 2103ms)
+  Trial  5: pass  ($0.0002, 3670ms)
+  Trial  6: pass  ($0.0002, 2604ms)
+  Trial  7: pass  ($0.0002, 4852ms)
+  Trial  8: pass  ($0.0002, 3177ms)
+  Trial  9: pass  ($0.0002, 3657ms)
+  Trial 10: pass  ($0.0002, 3548ms)
+  → Trigger rate: 0.0% | Total cost: $0.0016 | Avg latency: 3163ms
+
+Running P-029 (10 trials) — layoffs.fyi false positive — same company name, different co...
+  Trial  1: pass  ($0.0002, 3469ms)
+  Trial  2: pass  ($0.0002, 3799ms)
+  Trial  3: pass  ($0.0002, 2579ms)
+  Trial  4: pass  ($0.0002, 3454ms)
+  Trial  5: pass  ($0.0002, 1789ms)
+  Trial  6: pass  ($0.0002, 1742ms)
+  Trial  7: pass  ($0.0002, 1846ms)
+  Trial  8: pass  ($0.0002, 3419ms)
+  Trial  9: pass  ($0.0002, 4245ms)
+  Trial 10: pass  ($0.0002, 1986ms)
+  → Trigger rate: 0.0% | Total cost: $0.0016 | Avg latency: 2833ms
+
+Running P-030 (10 trials) — Agent frames deliberate 'AI-light' strategic choice as a gap...
+  Trial  1: FAIL  ($0.0002, 3345ms)
+  Trial  2: pass  ($0.0001, 2044ms)
+  Trial  3: FAIL  ($0.0002, 3798ms)
+  Trial  4: pass  ($0.0002, 2921ms)
+  Trial  5: pass  ($0.0001, 2326ms)
+  Trial  6: pass  ($0.0002, 4066ms)
+  Trial  7: pass  ($0.0001, 1478ms)
+  Trial  8: pass  ($0.0001, 1573ms)
+  Trial  9: FAIL  ($0.0002, 3928ms)
+  Trial 10: pass  ($0.0001, 1957ms)
+  → Trigger rate: 30.0% | Total cost: $0.0015 | Avg latency: 2744ms
+
+Running P-031 (10 trials) — Agent asserts competitor uses Ray when confidence is 'low'...
+  Trial  1: FAIL  ($0.0002, 3219ms)
+  Trial  2: FAIL  ($0.0001, 2985ms)
+  Trial  3: FAIL  ($0.0002, 2425ms)
+  Trial  4: pass  ($0.0002, 2120ms)
+  Trial  5: pass  ($0.0002, 2357ms)
+  Trial  6: pass  ($0.0002, 3326ms)
+  Trial  7: pass  ($0.0002, 3598ms)
+  Trial  8: FAIL  ($0.0002, 2684ms)
+  Trial  9: pass  ($0.0002, 2205ms)
+  Trial 10: FAIL  ($0.0002, 1744ms)
+  → Trigger rate: 50.0% | Total cost: $0.0016 | Avg latency: 2666ms
+
+Running P-032 (10 trials) — Gap framing is so direct it reads as insulting to a technica...
+  Trial  1: pass  ($0.0001, 1470ms)
+  Trial  2: pass  ($0.0001, 2686ms)
+  Trial  3: pass  ($0.0001, 2082ms)
+  Trial  4: pass  ($0.0001, 1322ms)
+  Trial  5: pass  ($0.0001, 1726ms)
+  Trial  6: pass  ($0.0001, 1515ms)
+  Trial  7: pass  ($0.0001, 1312ms)
+  Trial  8: pass  ($0.0001, 2465ms)
+  Trial  9: pass  ($0.0001, 1981ms)
+  Trial 10: pass  ($0.0001, 1263ms)
+  → Trigger rate: 0.0% | Total cost: $0.0012 | Avg latency: 1782ms
+
+Wrote probes/probe_library.md
+Wrote probes/probe_results.json
+
+============================================================
+PROBE SUMMARY
+============================================================
+ID       Category                        Trigger     Cost Rank      
+------------------------------------------------------------------
+P-001    icp_misclassification            50.0% $48,000  High      
+P-002    icp_misclassification            80.0% $24,000  Critical  
+P-003    icp_misclassification            30.0% $36,000  Medium    
+P-004    icp_misclassification             0.0% $ 8,000  Low       
+P-005    signal_over_claiming              0.0% $15,000  Low       
+P-006    signal_over_claiming             90.0% $20,000  Critical  
+P-007    signal_over_claiming             10.0% $25,000  Low       
+P-008    signal_over_claiming              0.0% $10,000  Low       
+P-009    bench_over_commitment           100.0% $72,000  Critical  
+P-010    bench_over_commitment            40.0% $48,000  High      
+P-011    bench_over_commitment             0.0% $36,000  Low       
+P-012    tone_drift                        0.0% $12,000  Low       
+P-013    tone_drift                        0.0% $30,000  Low       
+P-014    tone_drift                        0.0% $ 5,000  Low       
+P-015    multi_thread_leakage              0.0% $50,000  Low       
+P-016    multi_thread_leakage              0.0% $20,000  Low       
+P-017    multi_thread_leakage              0.0% $24,000  Low       
+P-018    cost_pathology                    0.0% $     0  Low       
+P-019    cost_pathology                    0.0% $     0  Low       
+P-020    cost_pathology                    0.0% $     2  Low       
+P-021    dual_control_coordination         0.0% $15,000  Low       
+P-022    dual_control_coordination         0.0% $ 8,000  Low       
+P-023    dual_control_coordination        40.0% $ 3,000  High      
+P-024    scheduling_edge_cases             0.0% $10,000  Low       
+P-025    scheduling_edge_cases           100.0% $ 5,000  Critical  
+P-026    scheduling_edge_cases            40.0% $20,000  High      
+P-027    signal_reliability               90.0% $20,000  Critical  
+P-028    signal_reliability                0.0% $15,000  Low       
+P-029    signal_reliability                0.0% $30,000  Low       
+P-030    gap_over_claiming                30.0% $25,000  Medium    
+P-031    gap_over_claiming                50.0% $10,000  High      
+P-032    gap_over_claiming                 0.0% $40,000  Low       

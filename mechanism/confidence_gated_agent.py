@@ -3,13 +3,17 @@ Confidence-Gated Phrasing + ICP Abstention mechanism.
 Controlled by ASSERTION_THRESHOLD, ABSTENTION_THRESHOLD, CONFLICT_ABSTENTION env vars.
 Run:  python mechanism/confidence_gated_agent.py
 """
-import anthropic
+from openai import OpenAI
 import json
 import os
 
 from langfuse import Langfuse
 
-client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+# OpenRouter configuration
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.environ["OPENAI_API_KEY"],
+)
 langfuse = Langfuse()
 
 CONFIDENCE_MAP = {"high": 1.0, "medium": 0.7, "low": 0.4}
@@ -19,7 +23,7 @@ ASSERTION_THRESHOLD = float(os.environ.get("ASSERTION_THRESHOLD", "0.70"))
 ABSTENTION_THRESHOLD = float(os.environ.get("ABSTENTION_THRESHOLD", "0.50"))
 CONFLICT_ABSTENTION = os.environ.get("CONFLICT_ABSTENTION", "True") == "True"
 
-MODEL = "claude-sonnet-4-6"
+MODEL = "openai/gpt-4o-mini"
 
 
 def compute_signal_confidence(signals: dict) -> dict:
@@ -106,17 +110,19 @@ Return JSON only: {{"subject": "string", "body": "string",
         "conflict_abstention": CONFLICT_ABSTENTION
     })
 
-    response = client.messages.create(
+    response = client.chat.completions.create(
         model=MODEL,
         max_tokens=600,
-        system=system,
-        messages=[{"role": "user", "content": prompt}]
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt}
+        ]
     )
     cost_usd = (
-        response.usage.input_tokens * 0.000003 +
-        response.usage.output_tokens * 0.000015
+        response.usage.prompt_tokens * 0.00000015 +
+        response.usage.completion_tokens * 0.00000060
     )
-    text = response.content[0].text.strip()
+    text = response.choices[0].message.content.strip()
     # Strip markdown code fences if present
     if text.startswith("```json"):
         text = text[7:]

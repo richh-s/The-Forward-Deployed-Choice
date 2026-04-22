@@ -1,0 +1,12 @@
+{
+  "comparison": "mechanism_v1 vs baseline",
+  "n_a": 20,
+  "n_b": 20,
+  "mean_a": 0.95,
+  "mean_b": 0.95,
+  "delta": 0.0,
+  "t_statistic": 0.0,
+  "p_value": 0.5,
+  "significant": false,
+  "interpretation": "Delta = +0.0%. NOT significant at p < 0.05 (t = 0.000, p = 0.500). mechanism_v1 mean = 95.0%, baseline mean = 95.0%."
+}

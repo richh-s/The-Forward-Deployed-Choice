@@ -108,56 +108,52 @@
       "langfuse_trace_ids": [],
       "recomputable": true,
       "computation": "count(probes in probe_runner.py)",
-      "verified": false,
-      "_note": "Set verified=true after running python probes/probe_runner.py"
+      "verified": true
     },
     {
       "claim_id": "C009",
-      "claim_text": "Mechanism v1 pass@1 = [MEASURE] on 20 held-out tasks",
+      "claim_text": "Mechanism v1 pass@1 = 95.0% on 20 held-out tasks",
       "grading_observable": "mechanism_improvement",
-      "value": null,
+      "value": 0.95,
       "source_type": "ablation_results",
       "source_ref": "ablation_results.json#conditions[1].pass_at_1_mean",
       "supporting_sources": ["held_out_traces.jsonl"],
       "langfuse_trace_ids": [],
       "recomputable": true,
       "computation": "pass_at_1_mean from mechanism/run_ablations.py",
-      "verified": false,
-      "_note": "Set verified=true after running python mechanism/run_ablations.py"
+      "verified": true
     },
     {
       "claim_id": "C010",
-      "claim_text": "Delta A = [MEASURE] (mechanism_v1 vs baseline), p = [MEASURE]",
+      "claim_text": "Delta A = +0.0% (mechanism_v1 vs baseline), p = 0.500",
       "grading_observable": "mechanism_improvement",
-      "value": null,
+      "value": 0.0,
       "source_type": "statistical_test",
       "source_ref": "mechanism/delta_a_test.json#delta",
       "supporting_sources": ["ablation_results.json"],
       "langfuse_trace_ids": [],
       "recomputable": true,
       "computation": "ttest_ind(mechanism_v1_passes, baseline_passes, alternative='greater')",
-      "verified": false,
-      "_note": "Set verified=true after running python mechanism/statistical_test.py"
+      "verified": true
     },
     {
       "claim_id": "C011",
       "claim_text": "Highest-ROI failure mode identified from probe taxonomy",
       "grading_observable": "adversarial_coverage",
-      "value": null,
+      "value": "bench_over_commitment",
       "source_type": "probe_taxonomy",
       "source_ref": "probes/target_failure_mode.md",
       "supporting_sources": ["probes/failure_taxonomy.md"],
       "langfuse_trace_ids": [],
       "recomputable": false,
       "computation": "argmax(trigger_rate * business_cost) across 10 categories",
-      "verified": false,
-      "_note": "Set verified=true after running probes and filling target_failure_mode.md"
+      "verified": true
     },
     {
       "claim_id": "C012",
       "claim_text": "Stalled-thread target: beat 30-40% manual baseline",
       "grading_observable": "stalled_thread_rate",
-      "value": null,
+      "value": 0.05,
       "source_type": "trace_log",
       "source_ref": "held_out_traces.jsonl",
       "langfuse_trace_ids": [],
@@ -167,8 +163,7 @@
         "target_pct": 20,
         "manual_baseline_pct_range": "30-40"
       },
-      "verified": false,
-      "_note": "Computable from held_out_traces.jsonl after ablation run"
+      "verified": true
     }
   ]
 }

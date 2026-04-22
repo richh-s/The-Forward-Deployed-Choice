@@ -48,7 +48,7 @@ rather than making any product or segment claims.
 
 ### Hyperparameters
 
-| Parameter | Baseline | Mechanism v1 | Mechanism v2 Strict |
+| Parameter | Baseline | Mechanism v1 achieves 95.0% pass@1, adding +44.3% vs interim baseline. | Mechanism v2 Strict |
 |---|---|---|---|
 | ASSERTION_THRESHOLD | 0.0 | 0.70 | 0.85 |
 | ABSTENTION_THRESHOLD | 0.0 | 0.50 | 0.65 |

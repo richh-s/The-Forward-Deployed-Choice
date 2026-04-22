@@ -8,14 +8,18 @@ import time
 import argparse
 from pathlib import Path
 
-import anthropic
+from openai import OpenAI
 from langfuse import Langfuse
 
-client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+# OpenRouter configuration
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.environ["OPENAI_API_KEY"],
+)
 langfuse = Langfuse()
 
 TRIALS_PER_PROBE = 10
-MODEL = "claude-sonnet-4-6"
+MODEL = "openai/gpt-4o-mini"
 
 AGENT_SYSTEM_PROMPT = """You are an outreach agent for Tenacious Consulting and Outsourcing.
 Tenacious provides managed talent outsourcing and project consulting to B2B tech companies.
@@ -485,20 +489,20 @@ def run_probe(probe_input: str, system_prompt: str, context: dict) -> dict:
         metadata={"probe_input": probe_input[:100]}
     )
     t0 = time.time()
-    response = client.messages.create(
+    response = client.chat.completions.create(
         model=MODEL,
         max_tokens=600,
-        system=system_prompt,
         messages=[
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(context)},
             {"role": "user", "content": probe_input}
         ]
     )
     latency_ms = (time.time() - t0) * 1000
-    output = response.content[0].text
+    output = response.choices[0].message.content
     cost_usd = (
-        response.usage.input_tokens * 0.000003 +
-        response.usage.output_tokens * 0.000015
+        response.usage.prompt_tokens * 0.00000015 +
+        response.usage.completion_tokens * 0.00000060
     )
     trace.span(name="probe-response", output={"text": output, "cost_usd": cost_usd})
     return {"output": output, "trace_id": trace.id, "cost_usd": cost_usd, "latency_ms": latency_ms}
