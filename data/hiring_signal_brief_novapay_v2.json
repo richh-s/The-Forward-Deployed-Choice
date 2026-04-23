@@ -1,0 +1,121 @@
+{
+  "prospect_domain": "novapaytechnologies.com",
+  "prospect_name": "NovaPay Technologies",
+  "generated_at": "2026-04-23T10:00:00Z",
+  "primary_segment_match": "segment_3_leadership_transition",
+  "segment_confidence": 0.7,
+  "ai_maturity": {
+    "score": 2,
+    "confidence": 0.7,
+    "justifications": [
+      {
+        "signal": "ai_adjacent_open_roles",
+        "status": "3 open ML-engineer roles of 9 total engineering roles posted on Wellfound",
+        "weight": "high",
+        "confidence": "medium",
+        "source_url": "https://wellfound.com/company/novapaytechnologies/jobs"
+      },
+      {
+        "signal": "named_ai_ml_leadership",
+        "status": "Head of AI listed on public company team page",
+        "weight": "high",
+        "confidence": "medium"
+      },
+      {
+        "signal": "modern_data_ml_stack",
+        "status": "Snowflake + dbt inferred via BuiltWith — not confirmed from job post language",
+        "weight": "low",
+        "confidence": "low"
+      },
+      {
+        "signal": "github_org_activity",
+        "status": "No public GitHub org found — signal absent",
+        "weight": "medium",
+        "confidence": "high"
+      },
+      {
+        "signal": "executive_commentary",
+        "status": "No AI-adjacent public commentary from CTO/CEO in last 90 days",
+        "weight": "medium",
+        "confidence": "high"
+      },
+      {
+        "signal": "strategic_communications",
+        "status": "No public press release referencing AI product initiative in last 90 days",
+        "weight": "low",
+        "confidence": "high"
+      }
+    ]
+  },
+  "hiring_velocity": {
+    "open_roles_today": 9,
+    "open_roles_60_days_ago": 0,
+    "velocity_label": "insufficient_signal",
+    "signal_confidence": 0.7,
+    "sources": ["wellfound", "linkedin_public"]
+  },
+  "buying_window_signals": {
+    "funding_event": {
+      "detected": true,
+      "stage": "series_b",
+      "amount_usd": 16000000,
+      "closed_at": "2026-02-14",
+      "source_url": "https://crunchbase.com/organization/novapaytechnologies/funding_rounds"
+    },
+    "layoff_event": {
+      "detected": false
+    },
+    "leadership_change": {
+      "detected": true,
+      "role": "vp_engineering",
+      "new_leader_name": "unknown — not publicly named",
+      "started_at": "2026-03-16",
+      "source_url": "https://crunchbase.com/organization/novapaytechnologies/people"
+    }
+  },
+  "tech_stack": ["Python", "Snowflake", "dbt", "React"],
+  "bench_to_brief_match": {
+    "required_stacks": ["python", "ml"],
+    "bench_available": true,
+    "gaps": []
+  },
+  "data_sources_checked": [
+    {
+      "source": "crunchbase_funding",
+      "status": "success",
+      "fetched_at": "2026-04-23T09:45:00Z"
+    },
+    {
+      "source": "wellfound_jobs",
+      "status": "success",
+      "fetched_at": "2026-04-23T09:46:00Z"
+    },
+    {
+      "source": "linkedin_public",
+      "status": "partial",
+      "error_message": "Leadership change confirmed but new leader name not public",
+      "fetched_at": "2026-04-23T09:47:00Z"
+    },
+    {
+      "source": "layoffs_fyi",
+      "status": "success",
+      "fetched_at": "2026-04-23T09:48:00Z"
+    },
+    {
+      "source": "github_org",
+      "status": "no_data",
+      "fetched_at": "2026-04-23T09:49:00Z"
+    },
+    {
+      "source": "builtwith",
+      "status": "partial",
+      "error_message": "Stack inferred from job post language, not confirmed via BuiltWith API",
+      "fetched_at": "2026-04-23T09:50:00Z"
+    }
+  ],
+  "honesty_flags": [
+    "tech_stack_inferred_not_confirmed",
+    "conflicting_segment_signals"
+  ],
+  "_classifier_rationale": "New VP Engineering appointed 38 days ago (≤90 days). Priority rule 2 applies: Segment 3 dominates. Fresh Series B funding (67 days ago) also present — conflict_note issued but Segment 3 takes priority per icp_definition.md. Segment confidence = 0.70 (leadership signal confidence = medium). Agent should acknowledge the appointment and let the new leader's reply direct technical language per style_guide."
+}

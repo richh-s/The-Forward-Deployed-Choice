@@ -123,3 +123,55 @@ The confidence-gating approach was chosen over alternatives because:
 4. **Kill-switch compatible**: The `abstain_reason` field feeds directly into the
    `icp_conflict_flag_rate` kill-switch metric. If > 15% of prospects trigger abstention,
    that signals a data quality problem upstream in the enrichment pipeline.
+
+## Seed Integration (Act III / Act IV update)
+
+### ICP Classifier Rewrite
+
+`enrichment/icp_classifier.py` was rewritten to implement the **official priority rules** from
+`tenacious_sales_data/seed/icp_definition.md`. The priority order changed from the Day-1 mock:
+
+| Priority | Condition | Segment |
+|---|---|---|
+| 1 | Layoff ≤120d AND fresh funding AND layoff ≤40% | Segment 2 |
+| 2 | New CTO/VP Eng ≤90d | Segment 3 |
+| 3 | AI-readiness ≥ 2 (capability gap) | Segment 4 |
+| 4 | Fresh funding ≤180d AND ≥5 open eng roles | Segment 1 |
+| 5 | Otherwise | Abstain |
+
+Key changes from the Day-1 classifier:
+- Segment 2 (cost restructuring) now **overrides** Segment 1 when layoff + funding co-occur
+- Segment 1 requires **≥5 open engineering roles** (per icp_definition.md qualifying filters)
+- Confidence returned as **float [0, 1]** via `CONFIDENCE_MAP = {"high": 1.0, "medium": 0.7, "low": 0.4}`
+- Abstention triggers when segment-determining signal confidence < 0.6
+
+Effect on NovaPay test prospect: re-classified from Segment 1 → **Segment 3** (VP Engineering
+appointed 38 days ago satisfies Priority 2 before fresh Series B funding reaches Priority 4).
+
+### Agent Seed Context
+
+`agent/load_seed.py` loads all seed files at startup (with module-level caching):
+- `icp_definition.md` — classification rules injected into system prompt
+- `style_guide.md` — tone markers injected into system prompt
+- `bench_summary.json` — live capacity used for honesty constraint
+- 5 discovery transcripts — first 3 used as few-shot examples in system prompt
+- `pricing_sheet.md` (first 1,500 chars) — quotable pricing bands
+- `case_studies.md`, `baseline_numbers.md`, `email_sequences/`
+
+The email agent (`agent/email_agent.py`) was updated to:
+- Replace hardcoded system prompt with seed-aware prompt via `build_system_prompt_context()`
+- Inject 3 discovery transcripts as few-shot examples via `build_few_shot_block()`
+- Enforce **120-word** body limit (down from 150) per `style_guide.md` §Formatting constraints
+- Replace "bench" with "engineering team" / "available capacity" per style_guide §Professional
+
+### Schema-Compliant NovaPay Brief
+
+`data/hiring_signal_brief_novapay_v2.json` validates against the official
+`tenacious_sales_data/schemas/hiring_signal_brief.schema.json`. Key schema structure:
+- `primary_segment_match` enum — the derived ICP classification
+- `ai_maturity.justifications` — explicit per-signal justification with weight/confidence
+- `hiring_velocity.velocity_label` enum — forces "insufficient_signal" when data is weak
+- `buying_window_signals` — structured funding, layoff, leadership change objects
+- `honesty_flags` — explicit flags the agent must respect when composing
+
+Validation: `python3 -c "from jsonschema import validate; ..."` → PASS.

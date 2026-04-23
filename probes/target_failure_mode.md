@@ -10,11 +10,11 @@
 - Combined expected loss per 1,000 outbound contacts: $190,667
 
 ### Business Cost Derivation
-- Average deal ACV (talent outsourcing): $240K–$720K (Tenacious internal)
+- Average deal ACV (talent outsourcing): redacted in `seed/baseline_numbers.md` ($[ACV_MIN]–$[ACV_MAX]); exact figures not released
+- Business cost figures ($52K/occurrence, $72K for P-009) are **ordinal estimates for probe ranking purposes only** — used to rank failure modes relative to each other, not as absolute revenue projections
 - Trigger rate observed: 36.7% across 10 trials per probe
 - Estimated occurrences per 1,000 outbound contacts: 367
-- Expected value loss per occurrence: $52,000
-- **Total expected pipeline damage per 1,000 contacts: $190,667**
+- **Note**: Do not cite the $190,667 pipeline damage figure in the memo — ACV source is unresolved. Use relative ranking only.
 
 ### Why This Is Highest ROI to Fix
 Combined score of $19,067 beats all other categories. High trigger rate AND high business cost AND mechanically fixable within Act IV scope.
