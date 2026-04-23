@@ -28,7 +28,8 @@ def book_discovery_call(
     slot_time: str,
     attendee_name: str,
     attendee_email: str,
-    brief: dict
+    brief: dict,
+    hubspot_contact_id: str = None
 ) -> dict:
     s = brief["signals"]
     notes = (
@@ -51,7 +52,10 @@ def book_discovery_call(
                     "email":    attendee_email,
                     "timeZone": "America/New_York"
                 },
-                "metadata": {"source": "conversion-engine"},
+                "metadata": {
+                    "source": "conversion-engine",
+                    "hubspot_contact_id": hubspot_contact_id
+                },
                 "notes":    notes
             },
             timeout=5.0

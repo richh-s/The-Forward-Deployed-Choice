@@ -48,7 +48,8 @@ def run_happy_path():
         slot_time=first_slot,
         attendee_name=SYNTHETIC_PROSPECT["name"],
         attendee_email=SYNTHETIC_PROSPECT["email"],
-        brief=HIRING_SIGNAL_BRIEF
+        brief=HIRING_SIGNAL_BRIEF,
+        hubspot_contact_id=contact_id
     )
     booking_id = booking.get("id", "unknown")
     print(f"  booking_id:  {booking_id}")

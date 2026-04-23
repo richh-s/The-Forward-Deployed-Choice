@@ -74,6 +74,8 @@ async def resend_webhook(
         _handle_email_clicked(data)
     elif event_type in ("email.bounced", "email.complained"):
         _handle_email_suppression(data, event_type)
+    elif event_type == "email.received" or event_type == "inbound_email":
+        _handle_email_reply(data)
 
     return {"received": True}
 
@@ -106,6 +108,22 @@ def _handle_email_clicked(data: dict):
 def _handle_email_suppression(data: dict, event_type: str):
     for addr in data.get("to", []):
         logger.warning("Suppressing %s due to %s", addr, event_type)
+
+
+def _handle_email_reply(data: dict):
+    from_addr = data.get("from", "unknown")
+    text = data.get("text", "")
+    logger.info("Received inbound email reply from %s: %s", from_addr, text[:50])
+    # Clear interface for downstream consumption
+    _emit_downstream_reply_event({
+        "channel": "email",
+        "sender": from_addr,
+        "content": text
+    })
+
+
+def _emit_downstream_reply_event(payload: dict):
+    logger.info("Emitting downstream reply event: %s", payload)
 
 
 # ─────────────────────────────────────────────

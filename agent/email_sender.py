@@ -34,16 +34,25 @@ def send_outreach(
         }
     )
     start = time.time()
-    result = resend.Emails.send({
-        "from":    "onboarding@resend.dev",
-        "to":      prospect["email"],
-        "subject": email_content["subject"],
-        "html":    email_content["body"],
-        "tags": [
-            {"name": "variant", "value": email_content.get("variant_tag", "")},
-            {"name": "segment", "value": "recently_funded"}
-        ]
-    })
+    try:
+        result = resend.Emails.send({
+            "from":    "onboarding@resend.dev",
+            "to":      prospect["email"],
+            "subject": email_content["subject"],
+            "html":    email_content["body"],
+            "tags": [
+                {"name": "variant", "value": email_content.get("variant_tag", "")},
+                {"name": "segment", "value": "recently_funded"}
+            ]
+        })
+    except Exception as e:
+        langfuse.flush()
+        return {
+            "error": "failed_send",
+            "details": str(e),
+            "trace_id": trace.id
+        }
+
     latency_ms = (time.time() - start) * 1000
     trace.span(
         name="resend-send",
