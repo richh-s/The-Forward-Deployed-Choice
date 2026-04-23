@@ -176,8 +176,21 @@ async def sms_webhook(request: Request):
         "last_reply":   reply,
         "turns":        state.get("turns", 0) + 1
     }
+
+    # Emit downstream event before replying
+    _emit_downstream_sms_event({
+        "channel": "sms",
+        "sender": phone,
+        "content": message,
+        "recipient": shortcode
+    })
+
     sms_service.send(reply, [phone], sender_id=shortcode)
     return {"status": "replied"}
+
+
+def _emit_downstream_sms_event(payload: dict):
+    logger.info("Emitting downstream SMS event for routing: %s", payload)
 
 
 def _agent_sms_reply(phone: str, message: str, state: dict) -> str:

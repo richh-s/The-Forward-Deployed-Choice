@@ -47,8 +47,19 @@ async def handle_inbound_sms(request: Request):
         "last_reply":   response_text,
         "turns":        state.get("turns", 0) + 1
     }
+    
+    emit_downstream_sms_event({
+        "channel": "sms",
+        "sender": phone,
+        "content": message,
+        "recipient": shortcode
+    })
+
     sms_service.send(response_text, [phone], sender_id=shortcode)
     return {"status": "replied"}
+
+def emit_downstream_sms_event(payload: dict):
+    print(f"Emitting downstream SMS event for routing: {payload}")
 
 
 def agent_sms_reply(phone: str, message: str, state: dict) -> str:
