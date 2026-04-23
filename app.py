@@ -35,6 +35,18 @@ OPT_OUT_COMMANDS = {"STOP", "UNSUB", "UNSUBSCRIBE", "QUIT", "CANCEL"}
 opted_out: set = set()
 conversation_state: dict = {}
 
+# ── Downstream Event Handlers ──
+_email_reply_handlers = []
+_sms_reply_handlers = []
+
+def register_email_reply_handler(handler: callable):
+    """Register a callback for inbound email replies."""
+    _email_reply_handlers.append(handler)
+
+def register_sms_reply_handler(handler: callable):
+    """Register a callback for inbound SMS replies."""
+    _sms_reply_handlers.append(handler)
+
 
 # ─────────────────────────────────────────────
 # Health check — Render pings this to confirm startup
@@ -124,6 +136,11 @@ def _handle_email_reply(data: dict):
 
 def _emit_downstream_reply_event(payload: dict):
     logger.info("Emitting downstream reply event: %s", payload)
+    for handler in _email_reply_handlers:
+        try:
+            handler(payload)
+        except Exception as e:
+            logger.error("Error in email reply handler: %s", e)
 
 
 # ─────────────────────────────────────────────
@@ -191,6 +208,11 @@ async def sms_webhook(request: Request):
 
 def _emit_downstream_sms_event(payload: dict):
     logger.info("Emitting downstream SMS event for routing: %s", payload)
+    for handler in _sms_reply_handlers:
+        try:
+            handler(payload)
+        except Exception as e:
+            logger.error("Error in SMS reply handler: %s", e)
 
 
 def _agent_sms_reply(phone: str, message: str, state: dict) -> str:
