@@ -67,25 +67,58 @@ def get_crunchbase_signal(company_name: str) -> dict:
 
 
 def get_layoff_signal(company_name: str) -> dict:
+    """
+    Reads layoffs.fyi CSV (CC-BY).
+    Columns: Company, Location_HQ, Industry, Laid_Off_Count, Percentage,
+             Date, Source, Country, Stage, Funds_Raised_USD
+    Percentage is stored as a decimal (0.1 = 10%). Converted to float % here.
+    """
     cutoff = datetime.utcnow() - timedelta(days=120)
     with open(LAYOFFS_CSV_PATH) as f:
         reader = csv.DictReader(f)
         for row in reader:
-            if company_name.lower() in row.get("Company", "").lower():
-                try:
-                    date = datetime.strptime(row["Date"], "%Y-%m-%d")
-                    if date >= cutoff:
-                        days_ago = (datetime.utcnow() - date).days
-                        return {
-                            "present":       True,
-                            "days_ago":      days_ago,
-                            "headcount_cut": row.get("Laid_Off_Count", ""),
-                            "confidence":    "high",
-                            "source":        "layoffs_fyi"
-                        }
-                except ValueError:
-                    continue
-    return {"present": False, "confidence": "high", "source": "layoffs_fyi"}
+            if company_name.lower() not in row.get("Company", "").lower():
+                continue
+            try:
+                event_date = datetime.strptime(row["Date"], "%Y-%m-%d")
+            except ValueError:
+                continue
+            if event_date < cutoff:
+                continue
+
+            days_ago = (datetime.utcnow() - event_date).days
+
+            # Percentage stored as decimal (0.1 → 10.0)
+            raw_pct = row.get("Percentage", "") or ""
+            try:
+                pct_workforce = round(float(raw_pct) * 100, 1)
+            except ValueError:
+                pct_workforce = 0.0
+
+            count_raw = row.get("Laid_Off_Count", "") or ""
+            try:
+                headcount_cut = int(float(count_raw))
+            except ValueError:
+                headcount_cut = 0
+
+            return {
+                "present":          True,
+                "layoff_detected":  True,
+                "days_ago":         days_ago,
+                "pct_workforce":    pct_workforce,
+                "headcount_cut":    headcount_cut,
+                "industry":         row.get("Industry", ""),
+                "stage":            row.get("Stage", ""),
+                "source_url":       row.get("Source", ""),
+                "confidence":       "high",
+                "source":           "layoffs_fyi",
+            }
+    return {
+        "present":         False,
+        "layoff_detected": False,
+        "confidence":      "high",
+        "source":          "layoffs_fyi",
+    }
 
 
 def get_job_post_velocity(company_name: str) -> dict:

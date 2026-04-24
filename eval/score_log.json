@@ -1,25 +1,18 @@
 {
-  "runs": [
-    {
-      "run_id": "run_001",
-      "model": "openai/gpt-4o-mini",
-      "domain": "retail",
-      "slice": "dev_30",
-      "trials": 5,
-      "pass_at_1_mean": 0.5067,
-      "ci_95_lower": NaN,
-      "ci_95_upper": NaN,
-      "cost_per_run_usd": 0.0,
-      "latency_p50_ms": 2800.0,
-      "latency_p95_ms": 3000.0,
-      "timestamp": "2026-04-22T10:00:00Z",
-      "langfuse_trace_ids": [
-        "fcc23820-57c8-44ed-8bf1-42e010432829",
-        "2883744a-678a-48e5-b1de-6f0d3ae99e97",
-        "f96bc35f-14a0-4524-bfb1-bcbd3d8fe803",
-        "0869b4a7-6e90-4580-9bc9-fa35619583d4",
-        "18b99660-c93e-4aee-b067-c67aad0aae07"
-      ]
-    }
-  ]
+  "avg_agent_cost": 0.0199,
+  "domain": "retail",
+  "evaluated_simulations": 150,
+  "git_commit": "d11a97072c49d093f7b5a3e4fe9da95b490d43ba",
+  "infra_error_count": 0,
+  "num_trials": 5,
+  "p50_latency_seconds": 105.9521,
+  "p95_latency_seconds": 551.6491,
+  "pass_at_1": 0.7267,
+  "pass_at_1_ci_95": [
+    0.6504,
+    0.7917
+  ],
+  "total_tasks": 30,
+  "model": "openrouter/qwen/qwen3-next-80b-a3b-thinking",
+  "source": "10academy_official_baseline"
 }

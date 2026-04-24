@@ -34,10 +34,22 @@ def classify_icp_segment(signals: dict) -> dict:
     has_funding = bool(s1.get("amount_usd") or s1.get("present"))
     funding_days = s1.get("days_ago", 9999)
     funding_round = s1.get("round", s1.get("round_type", "")).lower()
+
+    # Segment 1 gate: early-stage only (Series A/B or Seed)
     fresh_funding = (
         has_funding
         and funding_days <= 180
         and any(r in funding_round for r in ["series a", "series b", "seed", "a", "b"])
+    )
+
+    # Segment 2 gate: any venture-backed round within 180 days.
+    # Late-stage companies (C/D/E/F) that also lay off are classic cost-restructuring targets.
+    _VENTURE_STAGES = {"series a", "series b", "series c", "series d",
+                       "series e", "series f", "seed", "venture", "growth"}
+    fresh_funding_any_stage = (
+        has_funding
+        and funding_days <= 180
+        and any(vs in funding_round for vs in _VENTURE_STAGES)
     )
 
     has_layoff = (
@@ -75,8 +87,10 @@ def classify_icp_segment(signals: dict) -> dict:
 
     # ── Priority 1: Layoff (≤120 days) AND fresh funding → Segment 2 ───────
     # icp_definition.md: "cost pressure dominates the buying window"
-    # Layoff ≤40% is required; above that, company is in survival mode
-    if recent_layoff and fresh_funding and layoff_pct <= 40:
+    # Layoff ≤40% is required; above that, company is in survival mode.
+    # Any venture round qualifies (not just A/B): Series D companies that cut headcount
+    # while holding runway are the archetypal Segment 2 target.
+    if recent_layoff and fresh_funding_any_stage and layoff_pct <= 40:
         seg_confidence = min(conf_s1, conf_s3)
         conflict_flag = True  # funding + layoff is an inherent conflict signal
         return {
@@ -101,7 +115,7 @@ def classify_icp_segment(signals: dict) -> dict:
         }
 
     # Also Segment 2 when there's a layoff without fresh funding
-    if recent_layoff and not fresh_funding and open_roles >= 3 and layoff_pct <= 40:
+    if recent_layoff and not fresh_funding_any_stage and open_roles >= 3 and layoff_pct <= 40:
         seg_confidence = conf_s3
         if seg_confidence < 0.6:
             return _abstain(reason="layoff signal below confidence threshold 0.6")

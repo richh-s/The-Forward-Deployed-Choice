@@ -17,19 +17,33 @@ Email Agent (OpenRouter → gpt-4o-mini)
 Resend API → Prospect Inbox
 ```
 
-## Benchmark Results (Interim, April 22 2026)
+## Benchmark Results
+
+### Official 10Academy Baseline (provided, do not re-run)
 
 | Metric | Value | Source |
 |---|---|---|
-| τ²-Bench pass@1 | 50.67% | eval/score_log.json |
-| Read accuracy | 87.2% | eval/score_log.json |
-| Write accuracy | 73.2% | eval/score_log.json |
-| Cost per conversation | $0.0059 | invoice_summary.json |
-| Latency p50 | 2.8s | eval/latency_results.json |
-| Happy path trace ID | f76e839c-32e6-457b-a1d4-b6d41730f7b7 | Langfuse |
+| τ²-Bench pass@1 | 72.67% | eval/score_log.json |
+| 95% CI | [65.0%, 79.2%] | eval/score_log.json |
+| Evaluated simulations | 150 (30 tasks × 5 trials) | eval/score_log.json |
+| Avg agent cost | $0.0199/conv | eval/score_log.json |
+| Latency p50 | 105.95s | eval/score_log.json |
+| Latency p95 | 551.65s | eval/score_log.json |
+| Model | qwen3-next-80b-a3b-thinking | openrouter |
+| Git commit | d11a97072c | eval/score_log.json |
 
-τ²-Bench published reference (retail, Feb 2026): **42%**
-This baseline exceeds the reference by **+8.67pp**.
+This is the shared baseline all participants measure against.
+Participants run **1 trial per task** for their own evaluation (not 5).
+
+### Our System Latency & Cost (Tenacious stack)
+
+| Metric | Value | Source |
+|---|---|---|
+| Email compose latency p50 | 2.8s | eval/latency_results.json |
+| Email compose latency p95 | 4.2s | eval/latency_results.json |
+| Cost per prospect | $0.00054 | eval/latency_results.json |
+| Within kill-switch budget ($8) | Yes | eval/latency_results.json |
+| Happy path trace ID | f76e839c-32e6-457b-a1d4-b6d41730f7b7 | Langfuse |
 
 ## Key Files
 

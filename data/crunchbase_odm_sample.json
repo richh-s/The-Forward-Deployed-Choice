@@ -35,5 +35,29 @@
     "city": "San Francisco",
     "region": "CA",
     "people": []
+  },
+  {
+    "uuid": "monte-carlo-data-uuid-001",
+    "name": "Monte Carlo",
+    "last_funding_at": "2026-01-08",
+    "last_funding_total_usd": 25000000,
+    "last_funding_type": "Series D",
+    "total_funding_usd": 236000000,
+    "num_employees_enum": "201-500",
+    "category_list": "Data,Analytics,Machine Learning,Data Quality",
+    "city": "San Francisco",
+    "region": "CA",
+    "people": [
+      {
+        "name": "Barr Moses",
+        "title": "CEO",
+        "started_on": "2019-01-01"
+      },
+      {
+        "name": "Lior Gavish",
+        "title": "CTO",
+        "started_on": "2019-01-01"
+      }
+    ]
   }
 ]
