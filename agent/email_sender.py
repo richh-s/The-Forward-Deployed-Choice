@@ -1,7 +1,27 @@
+import re
 import resend
 import os
 import time
 from langfuse import Langfuse
+
+SENDER_NAME  = os.environ.get("SENDER_NAME",  "Alex Chen")
+SENDER_TITLE = os.environ.get("SENDER_TITLE", "Senior Engagement Manager")
+SENDER_COMPANY = os.environ.get("SENDER_COMPANY", "Tenacious Intelligence Corporation")
+
+
+def _fill_placeholders(body: str) -> str:
+    """Replace any LLM-generated bracket placeholders with real values."""
+    body = re.sub(r'\[Your Name\]',    SENDER_NAME,    body, flags=re.IGNORECASE)
+    body = re.sub(r'\[Your Title\]',   SENDER_TITLE,   body, flags=re.IGNORECASE)
+    body = re.sub(r'\[Your Company\]', SENDER_COMPANY, body, flags=re.IGNORECASE)
+    body = re.sub(r'\[Name\]',         SENDER_NAME,    body, flags=re.IGNORECASE)
+    body = re.sub(r'\[Title\]',        SENDER_TITLE,   body, flags=re.IGNORECASE)
+    # Generic catch: any remaining [Bracketed Placeholder] gets flagged
+    remaining = re.findall(r'\[[^\]]{3,40}\]', body)
+    for placeholder in remaining:
+        # Replace unknown ones with empty string to avoid sending garbage
+        body = body.replace(placeholder, "")
+    return body.strip()
 
 resend.api_key = os.environ["RESEND_API_KEY"]
 langfuse = Langfuse(
@@ -33,13 +53,15 @@ def send_outreach(
             "cost_usd":       cost_usd
         }
     )
+    clean_body = _fill_placeholders(email_content["body"])
+
     start = time.time()
     try:
         result = resend.Emails.send({
             "from":    "onboarding@resend.dev",
             "to":      prospect["email"],
             "subject": email_content["subject"],
-            "html":    email_content["body"],
+            "html":    clean_body,
             "tags": [
                 {"name": "variant", "value": email_content.get("variant_tag", "")},
                 {"name": "segment", "value": "recently_funded"}

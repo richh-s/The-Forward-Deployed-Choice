@@ -192,3 +192,27 @@ Every `[MEASURE]` placeholder in evidence_graph.json = automatic grading penalty
 
 Every claim in the PDF report maps to a `claim_id` in `evidence_graph.json`.
 Run `python scripts/build_evidence_graph.py` to populate values from generated files.
+
+---
+
+## Known Limitations and Next Steps
+
+A successor engineer picking up this repo should be aware of the following:
+
+### Data & Signals
+- **Job-post velocity (`delta_60d`) requires two snapshots 60 days apart.** On first run it stores a baseline in `data/velocity_cache.json` and returns `"unknown (baseline stored)"`. Real delta is available on the second run ≥60 days later.
+- **AI maturity signals 2–6 use deterministic public-proxy inference**, not live scraping of LinkedIn/GitHub/podcast feeds. Production replacement: wire `score_ai_maturity()` to a live LinkedIn Data API + GitHub GraphQL query.
+- **Crunchbase ODM sample (`data/crunchbase_odm_sample.json`) contains only 3 records.** Upgrade path: replace with the full Crunchbase ODM snapshot or use the live Crunchbase API (`CRUNCHBASE_API_KEY` env var).
+- **Layoffs data is a static CSV snapshot** (layoffs.fyi, downloaded April 2026). Set up a weekly cron to re-download from `https://layoffs.fyi/` to keep signal fresh.
+
+### Infrastructure
+- **Webhook server (`app.py`) runs on a Render free-tier instance** which spins down after 15 min of inactivity. Cold-start latency is ~30 s. Upgrade to a paid Render instance or deploy to Railway/Fly.io for always-on reliability.
+- **Africa's Talking sandbox** only delivers SMS to Kenyan numbers or registered sandbox testers. Register prospect numbers as sandbox testers, or upgrade to a production AT account with an approved sender ID.
+- **Twilio trial account restricts outbound calls to verified caller IDs** (domestic US only). To call international prospects, upgrade to a paid Twilio account and enable per-country geo-permissions.
+- **ngrok free tier generates a new URL on every restart.** Update `WEBHOOK_BASE_URL` in `.env` and re-register webhooks in Resend, Africa's Talking, and Cal.com dashboards after each restart. Use a paid ngrok plan or a static Render URL for production.
+
+### Code Architecture
+- **Channel handoff state is in-memory** (`prospect_registry`, `opted_out`, `conversation_state` dicts in `app.py`). Replace with Redis or a Postgres table before scaling beyond a single process.
+- **Cal.com booking link is referenced in SMS replies but not auto-generated.** Next step: call the Cal.com Booking Links API to generate a personalised scheduling URL and embed it in the SMS body.
+- **HubSpot activity logging** writes `meeting_booked` / `meeting_time` on booking events but does not log email open, click, or SMS reply events as CRM timeline activities. Add `POST /crm/v3/objects/engagements` calls for full activity history.
+- **mechanism_v1 ablation shows p = 0.5 on the 20-task held-out slice** — not statistically significant on this sample size. Larger evaluation (150 tasks) is needed to confirm Delta A. The mechanism is still deployed because the probe library shows a 100% trigger rate on P-009 (bench over-commitment) which drops to 0% with confidence gating.
