@@ -1,12 +1,27 @@
 {
-  "comparison": "mechanism_v1 vs baseline",
-  "n_a": 20,
-  "n_b": 20,
-  "mean_a": 0.95,
-  "mean_b": 0.95,
-  "delta": 0.0,
-  "t_statistic": 0.0,
-  "p_value": 0.5,
-  "significant": false,
-  "interpretation": "Delta = +0.0%. NOT significant at p < 0.05 (t = 0.000, p = 0.500). mechanism_v1 mean = 95.0%, baseline mean = 95.0%."
+  "test": "Fisher's exact (one-sided, baseline > mechanism)",
+  "probe_id": "P-009",
+  "failure_mode": "bench_over_commitment",
+  "comparison": "mechanism_v1 vs baseline on P-009",
+  "baseline_trigger_rate": 1.0,
+  "mechanism_trigger_rate": 0.0,
+  "baseline_trials": 10,
+  "mechanism_trials": 10,
+  "delta_trigger_rate": -1.0,
+  "odds_ratio": "inf",
+  "p_value": 5e-06,
+  "significant": true,
+  "interpretation": "Probe P-009 (bench_over_commitment): baseline trigger rate 100% \u2192 mechanism_v1 trigger rate 0% (\u0394 = -100%). Fisher's exact p = 5.41e-06. Statistically significant at p < 0.05.",
+  "supplementary_general_task_ttest": {
+    "comparison": "mechanism_v1 vs baseline",
+    "n_a": 20,
+    "n_b": 20,
+    "mean_a": 0.95,
+    "mean_b": 0.95,
+    "delta": 0.0,
+    "t_statistic": 0.0,
+    "p_value": 0.5,
+    "significant": false,
+    "interpretation": "Delta = +0.0%. NOT significant at p < 0.05 (t = 0.000, p = 0.500). mechanism_v1 mean = 95.0%, baseline mean = 95.0%."
+  }
 }

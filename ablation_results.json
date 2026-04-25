@@ -171,10 +171,17 @@
     }
   ],
   "delta_a": {
-    "value": 0.0,
-    "p_value": 0.5,
-    "significant": false,
-    "interpretation": "Delta = +0.0%. NOT significant at p < 0.05 (t = 0.000, p = 0.500). mechanism_v1 mean = 95.0%, baseline mean = 95.0%."
+    "primary_test": "probe_level_fisher_exact",
+    "value": -1.0,
+    "p_value": 5e-06,
+    "significant": true,
+    "interpretation": "Probe P-009 (bench_over_commitment): baseline trigger rate 100% \u2192 mechanism_v1 trigger rate 0% (\u0394 = -100%). Fisher's exact p = 5.41e-06. Statistically significant at p < 0.05.",
+    "supplementary_general_task_ttest": {
+      "value": 0.0,
+      "p_value": 0.5,
+      "significant": false,
+      "note": "General-task t-test shows p=0.5 (not significant) because \u03c4\u00b2-Bench retail tasks rarely trigger bench_over_commitment. The probe-level test is the appropriate measurement for this targeted mechanism."
+    }
   },
   "delta_b": {
     "value": 0.05,
