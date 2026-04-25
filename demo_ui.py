@@ -1,5 +1,5 @@
 """
-Demo Dashboard — runs all 8 required demo items from a browser UI.
+Demo Dashboard — runs all 9 demo steps from a browser UI.
 Access at: http://localhost:8001
 Run with: python demo_ui.py
 """
@@ -26,6 +26,7 @@ DEMO_STEPS = [
         "description": "Compose signal-grounded email → send via Resend → create HubSpot contact → book Cal.com slot",
         "command": [sys.executable, "main.py"],
         "channels": "Email → HubSpot → Cal.com",
+        "tag": "Core Pipeline",
     },
     {
         "id": 2,
@@ -58,7 +59,8 @@ for k,v in gap.items():
     if isinstance(v, str):
         print(f"  {k}: {v[:80]}")
 """],
-        "channels": "Data layer",
+        "channels": "Data Layer",
+        "tag": "Enrichment",
     },
     {
         "id": 3,
@@ -77,6 +79,7 @@ print(f"ICP Segment: {HIRING_SIGNAL_BRIEF['signals']['signal_6_icp_segment']['se
 print(f"Enrichment timestamp: {HIRING_SIGNAL_BRIEF['last_enriched_at']}")
 """],
         "channels": "HubSpot CRM",
+        "tag": "CRM",
     },
     {
         "id": 4,
@@ -153,6 +156,7 @@ if intent == "warm":
     print("PASS: Warm email reply correctly detected and routed to SMS channel")
 """],
         "channels": "Email → SMS (Africa's Talking)",
+        "tag": "Multi-Channel",
     },
     {
         "id": 5,
@@ -191,6 +195,7 @@ else:
     print(f"Result: Routed to {result['label']}")
 """],
         "channels": "ICP Classifier",
+        "tag": "Safety Gate",
     },
     {
         "id": 6,
@@ -198,6 +203,7 @@ else:
         "description": "Monte Carlo: real layoffs.fyi data (30% cut, 29d ago) + Series D funding → Segment 2, not naive Segment 1",
         "command": [sys.executable, "scripts/demo_segment2.py"],
         "channels": "layoffs.fyi CSV → ICP Classifier",
+        "tag": "Enrichment",
     },
     {
         "id": 7,
@@ -222,6 +228,7 @@ print("Full trace log: eval/trace_log.jsonl (150 simulations)")
 print("Langfuse traces: https://cloud.langfuse.com")
 """],
         "channels": "τ²-Bench + Langfuse",
+        "tag": "Evaluation",
     },
     {
         "id": 8,
@@ -250,10 +257,11 @@ for i, line in enumerate(lines[:40]):
     print(f"{i+1:3}: {line}", end='')
 """],
         "channels": "Probes → Mechanism",
+        "tag": "Safety",
     },
     {
         "id": 9,
-        "title": "Voice Call (Bonus)",
+        "title": "Voice Call — Twilio Discovery Call",
         "description": "Outbound Twilio discovery call to prospect — trial account queues with real SID",
         "command": [sys.executable, "-c", """
 from dotenv import load_dotenv; load_dotenv()
@@ -275,9 +283,20 @@ elif result.get("sid"):
     print("Note: Trial account restricts international delivery")
 """],
         "channels": "Twilio Voice",
+        "tag": "Voice",
     },
 ]
 
+TAG_COLORS = {
+    "Core Pipeline": "#6366f1",
+    "Enrichment": "#0ea5e9",
+    "CRM": "#8b5cf6",
+    "Multi-Channel": "#10b981",
+    "Safety Gate": "#f59e0b",
+    "Safety": "#f59e0b",
+    "Evaluation": "#3b82f6",
+    "Voice": "#ec4899",
+}
 
 HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -286,132 +305,585 @@ HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tenacious Demo Dashboard</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
-  header { background: #1a1d27; border-bottom: 1px solid #2d3748; padding: 20px 32px; display: flex; align-items: center; gap: 16px; }
-  header h1 { font-size: 20px; font-weight: 700; color: #fff; }
-  header .badge { background: #3b82f6; color: #fff; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
-  .subtitle { color: #64748b; font-size: 13px; margin-top: 2px; }
-  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
-  .card { background: #1a1d27; border: 1px solid #2d3748; border-radius: 12px; overflow: hidden; transition: border-color 0.2s; }
-  .card.running { border-color: #3b82f6; }
-  .card.pass { border-color: #10b981; }
-  .card.fail { border-color: #ef4444; }
-  .card-header { padding: 16px 20px; display: flex; align-items: flex-start; gap: 12px; }
-  .step-num { background: #2d3748; color: #94a3b8; font-size: 12px; font-weight: 700; width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .card.running .step-num { background: #1d4ed8; color: #fff; }
-  .card.pass .step-num { background: #065f46; color: #34d399; }
-  .card.fail .step-num { background: #7f1d1d; color: #fca5a5; }
-  .card-info { flex: 1; }
-  .card-title { font-size: 14px; font-weight: 600; color: #f1f5f9; margin-bottom: 4px; }
-  .card-desc { font-size: 12px; color: #64748b; line-height: 1.5; }
-  .card-channel { font-size: 11px; color: #3b82f6; margin-top: 6px; font-weight: 500; }
-  .bonus { color: #f59e0b !important; }
-  .card-status { flex-shrink: 0; font-size: 20px; }
-  .card-footer { padding: 12px 20px; background: #141720; border-top: 1px solid #2d3748; display: flex; align-items: center; gap: 10px; }
-  .btn { padding: 7px 18px; border-radius: 7px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
-  .btn-run { background: #3b82f6; color: #fff; }
-  .btn-run:hover { background: #2563eb; }
-  .btn-run:disabled { background: #1e3a5f; color: #4b6cb7; cursor: not-allowed; }
-  .status-text { font-size: 12px; color: #64748b; }
-  .output-area { margin: 0 20px 16px; background: #0d1117; border: 1px solid #2d3748; border-radius: 8px; padding: 12px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: #a3e635; line-height: 1.6; max-height: 200px; overflow-y: auto; white-space: pre-wrap; display: none; }
-  .output-area.visible { display: block; }
-  .run-all { background: #10b981; color: #fff; padding: 10px 24px; border-radius: 8px; border: none; font-size: 14px; font-weight: 700; cursor: pointer; margin-bottom: 24px; }
-  .run-all:hover { background: #059669; }
-  .progress { font-size: 13px; color: #64748b; margin-bottom: 24px; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0b0e18;
+    --surface:  #131726;
+    --surface2: #1c2138;
+    --border:   #252d45;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --blue:     #3b82f6;
+    --green:    #10b981;
+    --red:      #ef4444;
+    --amber:    #f59e0b;
+    --radius:   12px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 36px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(8px);
+  }
+  .header-left { display: flex; align-items: center; gap: 14px; }
+  .logo {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 800; color: #fff;
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: -0.3px; }
+  .header-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .pill {
+    font-size: 11px; font-weight: 600;
+    padding: 4px 12px; border-radius: 20px;
+    background: rgba(99,102,241,0.15);
+    color: #818cf8;
+    border: 1px solid rgba(99,102,241,0.3);
+  }
+
+  /* ── Main layout ── */
+  main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 60px; }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px; gap: 16px; flex-wrap: wrap;
+  }
+  .progress-bar-wrap { flex: 1; min-width: 200px; }
+  .progress-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .progress-bar-bg {
+    height: 4px; background: var(--surface2); border-radius: 4px; overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #3b82f6, #10b981);
+    border-radius: 4px;
+    transition: width 0.4s ease;
+  }
+  .btn-run-all {
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    color: #fff; padding: 10px 22px;
+    border-radius: 9px; border: none;
+    font-size: 13px; font-weight: 700;
+    cursor: pointer; white-space: nowrap;
+    transition: opacity 0.15s, transform 0.1s;
+    box-shadow: 0 4px 14px rgba(59,130,246,0.35);
+  }
+  .btn-run-all:hover { opacity: 0.92; transform: translateY(-1px); }
+  .btn-run-all:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+  /* ── Grid ── */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 1000px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 640px)  { .grid { grid-template-columns: 1fr; } }
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    display: flex; flex-direction: column;
+  }
+  .card:hover  { border-color: #2d3a5a; }
+  .card.running { border-color: var(--blue); box-shadow: 0 0 0 1px rgba(59,130,246,0.2); }
+  .card.pass   { border-color: var(--green); box-shadow: 0 0 0 1px rgba(16,185,129,0.15); }
+  .card.fail   { border-color: var(--red);   box-shadow: 0 0 0 1px rgba(239,68,68,0.15); }
+
+  .card-header { padding: 16px 16px 12px; display: flex; gap: 12px; align-items: flex-start; flex: 1; }
+
+  .step-badge {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: var(--surface2); color: var(--muted);
+    font-size: 12px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: background 0.2s, color 0.2s;
+  }
+  .card.running .step-badge { background: rgba(59,130,246,0.2); color: var(--blue); }
+  .card.pass   .step-badge  { background: rgba(16,185,129,0.15); color: var(--green); }
+  .card.fail   .step-badge  { background: rgba(239,68,68,0.15);  color: var(--red); }
+
+  .card-body { flex: 1; }
+  .card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .card-tag {
+    font-size: 10px; font-weight: 700; padding: 2px 8px;
+    border-radius: 5px; letter-spacing: 0.4px;
+    flex-shrink: 0;
+  }
+  .card-title { font-size: 13px; font-weight: 700; color: #f1f5f9; line-height: 1.35; }
+  .card-desc  { font-size: 11.5px; color: var(--muted); line-height: 1.55; margin-top: 5px; }
+  .card-channel { font-size: 10.5px; color: var(--blue); margin-top: 8px; font-weight: 600; opacity: 0.85; }
+
+  .card-status-icon { font-size: 18px; flex-shrink: 0; }
+
+  /* ── Card footer ── */
+  .card-footer {
+    padding: 10px 16px;
+    background: var(--surface2);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .btn {
+    padding: 6px 14px; border-radius: 7px; border: none;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .btn-run {
+    background: var(--blue); color: #fff;
+  }
+  .btn-run:hover   { background: #2563eb; }
+  .btn-run:disabled { background: #1e3158; color: #3a5a9a; cursor: not-allowed; }
+  .btn-output {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    display: none;
+  }
+  .btn-output:hover { color: var(--text); border-color: #3d4f70; background: var(--surface); }
+  .btn-output.visible { display: inline-flex; align-items: center; gap: 5px; }
+  .status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted); flex-shrink: 0;
+    transition: background 0.2s;
+  }
+  .card.running .status-dot { background: var(--blue); animation: pulse 1s infinite; }
+  .card.pass    .status-dot { background: var(--green); }
+  .card.fail    .status-dot { background: var(--red); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  .status-text { font-size: 11px; color: var(--muted); flex: 1; }
+
+  /* ── Inline mini-output (last 3 lines) ── */
+  .mini-output {
+    margin: 0 16px 12px;
+    background: #080c14;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 8px 10px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 10.5px;
+    color: #7dd3a8;
+    line-height: 1.6;
+    max-height: 68px;
+    overflow: hidden;
+    display: none;
+    position: relative;
+  }
+  .mini-output.visible { display: block; }
+  .mini-output::after {
+    content: '';
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 24px;
+    background: linear-gradient(transparent, #080c14);
+    pointer-events: none;
+  }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 500;
+    background: rgba(0,0,0,0.75);
+    backdrop-filter: blur(4px);
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    width: 100%; max-width: 860px;
+    max-height: 85vh;
+    display: flex; flex-direction: column;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+    overflow: hidden;
+  }
+  .modal-header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .modal-title { font-size: 15px; font-weight: 700; color: #fff; }
+  .modal-meta  { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .modal-close {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--muted); font-size: 18px; line-height: 1;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .modal-close:hover { color: var(--text); background: #252d45; }
+
+  .modal-toolbar {
+    padding: 10px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+    flex-shrink: 0;
+    background: var(--surface2);
+  }
+  .modal-status-badge {
+    font-size: 11px; font-weight: 700;
+    padding: 3px 10px; border-radius: 20px;
+  }
+  .badge-running { background: rgba(59,130,246,0.15); color: #60a5fa; }
+  .badge-pass    { background: rgba(16,185,129,0.15); color: #34d399; }
+  .badge-fail    { background: rgba(239,68,68,0.15);  color: #f87171; }
+  .badge-idle    { background: var(--surface); color: var(--muted); }
+  .modal-line-count { font-size: 11px; color: var(--muted); margin-left: auto; }
+
+  .btn-copy {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px; font-weight: 600;
+    padding: 4px 12px; border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-copy:hover { color: var(--text); border-color: #3d4f70; }
+
+  .modal-body { flex: 1; overflow-y: auto; padding: 0; }
+  .modal-output {
+    padding: 16px 24px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 12px;
+    line-height: 1.75;
+    color: #c9d8e8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-height: 200px;
+  }
+  .modal-output .line-pass    { color: #34d399; }
+  .modal-output .line-fail    { color: #f87171; }
+  .modal-output .line-section { color: #818cf8; font-weight: 700; }
+  .modal-output .line-info    { color: #94a3b8; }
+
+  /* scrollbar */
+  .modal-body::-webkit-scrollbar { width: 6px; }
+  .modal-body::-webkit-scrollbar-track { background: transparent; }
+  .modal-body::-webkit-scrollbar-thumb { background: #2d3a5a; border-radius: 6px; }
+
+  /* ── Summary bar ── */
+  .summary {
+    display: flex; gap: 24px; flex-wrap: wrap;
+    margin-bottom: 28px;
+    padding: 16px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .summary-item { display: flex; flex-direction: column; gap: 2px; }
+  .summary-val  { font-size: 22px; font-weight: 800; color: #fff; }
+  .summary-lbl  { font-size: 11px; color: var(--muted); font-weight: 500; }
+  .summary-val.green { color: var(--green); }
+  .summary-val.red   { color: var(--red); }
+  .summary-val.blue  { color: var(--blue); }
+  .summary-divider { width: 1px; background: var(--border); align-self: stretch; }
 </style>
 </head>
 <body>
-<header>
-  <div>
-    <h1>Tenacious Consulting — Demo Dashboard</h1>
-    <div class="subtitle">Forward-Deployed Challenge · Final Submission · April 2026</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="modal-title">Step Output</div>
+        <div class="modal-meta" id="modal-meta"></div>
+      </div>
+      <button class="modal-close" onclick="closeModalBtn()">×</button>
+    </div>
+    <div class="modal-toolbar">
+      <span class="modal-status-badge badge-idle" id="modal-badge">Idle</span>
+      <button class="btn-copy" onclick="copyOutput()" id="copy-btn">Copy</button>
+      <span class="modal-line-count" id="modal-line-count"></span>
+    </div>
+    <div class="modal-body">
+      <div class="modal-output" id="modal-output">No output yet.</div>
+    </div>
   </div>
-  <div class="badge">8 Required Items</div>
+</div>
+
+<header>
+  <div class="header-left">
+    <div class="logo">T</div>
+    <div>
+      <h1>Tenacious Consulting — Demo Dashboard</h1>
+      <div class="header-sub">Forward-Deployed Challenge · Final Submission · April 2026 · Rahel Samson</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="pill">9 Demo Steps</div>
+  </div>
 </header>
+
 <main>
-  <button class="run-all" onclick="runAll()">▶ Run All Steps</button>
-  <div class="progress" id="progress">Ready — click a step to run it individually, or Run All to go in sequence.</div>
+  <div class="summary">
+    <div class="summary-item">
+      <span class="summary-val blue" id="sum-total">9</span>
+      <span class="summary-lbl">Total Steps</span>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-item">
+      <span class="summary-val green" id="sum-pass">0</span>
+      <span class="summary-lbl">Passed</span>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-item">
+      <span class="summary-val red" id="sum-fail">0</span>
+      <span class="summary-lbl">Failed</span>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-item">
+      <span class="summary-val" id="sum-pending" style="color:#64748b">9</span>
+      <span class="summary-lbl">Pending</span>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="progress-bar-wrap">
+      <div class="progress-label" id="progress-label">Ready — run steps individually or click Run All</div>
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-fill"></div></div>
+    </div>
+    <button class="btn-run-all" id="run-all-btn" onclick="runAll()">▶ Run All Steps</button>
+  </div>
+
   <div class="grid" id="grid"></div>
 </main>
+
 <script>
 const steps = STEPS_JSON;
+const outputs = {};
+const states  = {};
+
+function tagStyle(tag) {
+  const map = TAGCOLORS_JSON;
+  const col = map[tag] || '#64748b';
+  return `background:${col}22;color:${col};border:1px solid ${col}44`;
+}
 
 function renderCards() {
   const grid = document.getElementById('grid');
   grid.innerHTML = steps.map(s => `
     <div class="card" id="card-${s.id}">
       <div class="card-header">
-        <div class="step-num">${s.id}</div>
-        <div class="card-info">
-          <div class="card-title">${s.title}${s.id === 9 ? ' <span style="font-size:11px;color:#f59e0b">(bonus)</span>' : ''}</div>
+        <div class="step-badge">${s.id}</div>
+        <div class="card-body">
+          <div class="card-top">
+            <span class="card-tag" style="${tagStyle(s.tag)}">${s.tag}</span>
+          </div>
+          <div class="card-title">${s.title}</div>
           <div class="card-desc">${s.description}</div>
-          <div class="card-channel ${s.id === 9 ? 'bonus' : ''}">${s.channels}</div>
+          <div class="card-channel">⟶ ${s.channels}</div>
         </div>
-        <div class="card-status" id="status-${s.id}">⬜</div>
+        <div class="card-status-icon" id="status-icon-${s.id}">⬜</div>
       </div>
+      <div class="mini-output" id="mini-${s.id}"></div>
       <div class="card-footer">
-        <button class="btn btn-run" id="btn-${s.id}" onclick="runStep(${s.id})">▶ Run</button>
+        <div class="status-dot" id="dot-${s.id}"></div>
         <span class="status-text" id="statustext-${s.id}">Not started</span>
+        <button class="btn btn-run" id="btn-${s.id}" onclick="runStep(${s.id})">▶ Run</button>
+        <button class="btn btn-output" id="expand-${s.id}" onclick="openModal(${s.id})">
+          ⤢ View Output
+        </button>
       </div>
-      <div class="output-area" id="output-${s.id}"></div>
     </div>
   `).join('');
 }
 
+function updateSummary() {
+  const pass = Object.values(states).filter(v => v === 'pass').length;
+  const fail = Object.values(states).filter(v => v === 'fail').length;
+  const done = pass + fail;
+  document.getElementById('sum-pass').textContent = pass;
+  document.getElementById('sum-fail').textContent = fail;
+  document.getElementById('sum-pending').textContent = steps.length - done;
+  const pct = Math.round((done / steps.length) * 100);
+  document.getElementById('progress-fill').style.width = pct + '%';
+}
+
+function colorLine(text) {
+  const esc = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  if (/^={3,}/.test(text)) return `<span class="line-section">${esc}</span>`;
+  if (/\bPASS\b/i.test(text)) return `<span class="line-pass">${esc}</span>`;
+  if (/\bFAIL\b|\bError\b|\bTraceback\b/i.test(text)) return `<span class="line-fail">${esc}</span>`;
+  if (/^\\[INFO\\]|^Note:/.test(text)) return `<span class="line-info">${esc}</span>`;
+  return esc;
+}
+
 async function runStep(id) {
-  const card = document.getElementById(`card-${id}`);
-  const btn = document.getElementById(`btn-${id}`);
-  const statusEl = document.getElementById(`status-${id}`);
+  const card       = document.getElementById(`card-${id}`);
+  const btn        = document.getElementById(`btn-${id}`);
+  const icon       = document.getElementById(`status-icon-${id}`);
   const statusText = document.getElementById(`statustext-${id}`);
-  const output = document.getElementById(`output-${id}`);
+  const mini       = document.getElementById(`mini-${id}`);
+  const expandBtn  = document.getElementById(`expand-${id}`);
+
+  states[id] = 'running';
+  outputs[id] = '';
 
   card.className = 'card running';
   btn.disabled = true;
-  statusEl.textContent = '🔄';
-  statusText.textContent = 'Running...';
-  output.className = 'output-area visible';
-  output.textContent = '';
+  icon.textContent = '🔄';
+  statusText.textContent = 'Running…';
+  mini.className = 'mini-output visible';
+  mini.textContent = '';
+  expandBtn.classList.remove('visible');
+
+  if (document.getElementById('modal-output').dataset.stepId === String(id)) {
+    setModalState('running', steps.find(s=>s.id===id));
+  }
+
+  updateSummary();
 
   try {
     const resp = await fetch(`/demo/run/${id}`, { method: 'POST' });
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
-    let full = '';
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       const chunk = decoder.decode(value);
-      full += chunk;
-      output.textContent = full;
-      output.scrollTop = output.scrollHeight;
+      outputs[id] += chunk;
+
+      // update mini-output (last few lines)
+      const lines = outputs[id].trimEnd().split('\\n');
+      const tail = lines.slice(-4).join('\\n');
+      mini.textContent = tail;
+
+      // live-update modal if open for this step
+      if (document.getElementById('modal-output').dataset.stepId === String(id)) {
+        renderModalOutput(id);
+      }
     }
 
-    const success = !full.includes('Traceback') && !full.includes('Error:') && !full.includes('ModuleNotFoundError') && !full.includes('ImportError');
-    card.className = `card ${success ? 'pass' : 'fail'}`;
-    statusEl.textContent = success ? '✅' : '❌';
-    statusText.textContent = success ? 'Complete' : 'Check output';
+    const ok = !outputs[id].includes('Traceback') &&
+               !outputs[id].includes('Error:') &&
+               !outputs[id].includes('ModuleNotFoundError') &&
+               !outputs[id].includes('ImportError');
+
+    states[id] = ok ? 'pass' : 'fail';
+    card.className = `card ${ok ? 'pass' : 'fail'}`;
+    icon.textContent = ok ? '✅' : '❌';
+    statusText.textContent = ok ? 'Complete' : 'Check output';
+
+    if (document.getElementById('modal-output').dataset.stepId === String(id)) {
+      setModalState(ok ? 'pass' : 'fail', steps.find(s=>s.id===id));
+      renderModalOutput(id);
+    }
   } catch(e) {
+    states[id] = 'fail';
+    outputs[id] += `\\nError: ${e.message}`;
     card.className = 'card fail';
-    statusEl.textContent = '❌';
+    icon.textContent = '❌';
     statusText.textContent = 'Failed';
-    output.textContent = `Error: ${e.message}`;
   }
+
   btn.disabled = false;
+  expandBtn.classList.add('visible');
+  updateSummary();
 }
 
 async function runAll() {
-  const prog = document.getElementById('progress');
+  const allBtn = document.getElementById('run-all-btn');
+  const label  = document.getElementById('progress-label');
+  allBtn.disabled = true;
   for (const s of steps) {
-    prog.textContent = `Running step ${s.id} of ${steps.length}: ${s.title}...`;
+    label.textContent = `Running step ${s.id} of ${steps.length}: ${s.title}…`;
     await runStep(s.id);
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 400));
   }
-  prog.textContent = `All ${steps.length} steps complete.`;
+  label.textContent = `All ${steps.length} steps complete.`;
+  allBtn.disabled = false;
 }
+
+// ── Modal ──
+function openModal(id) {
+  const step = steps.find(s => s.id === id);
+  const modalOutput = document.getElementById('modal-output');
+  modalOutput.dataset.stepId = id;
+
+  document.getElementById('modal-title').textContent = `Step ${id} — ${step.title}`;
+  document.getElementById('modal-meta').textContent = step.channels;
+
+  const state = states[id] || 'idle';
+  setModalState(state, step);
+  renderModalOutput(id);
+
+  document.getElementById('modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function renderModalOutput(id) {
+  const out = outputs[id] || '(no output yet — run the step first)';
+  const lines = out.split('\\n');
+  const html = lines.map(colorLine).join('\\n');
+  const el = document.getElementById('modal-output');
+  el.innerHTML = html;
+  document.getElementById('modal-line-count').textContent = `${lines.length} lines`;
+  // auto-scroll if running
+  if (states[id] === 'running') {
+    const body = el.closest('.modal-body');
+    body.scrollTop = body.scrollHeight;
+  }
+}
+
+function setModalState(state, step) {
+  const badge = document.getElementById('modal-badge');
+  badge.className = 'modal-status-badge';
+  if (state === 'running') { badge.classList.add('badge-running'); badge.textContent = '● Running'; }
+  else if (state === 'pass') { badge.classList.add('badge-pass'); badge.textContent = '✓ Passed'; }
+  else if (state === 'fail') { badge.classList.add('badge-fail'); badge.textContent = '✗ Failed'; }
+  else { badge.classList.add('badge-idle'); badge.textContent = 'Not started'; }
+}
+
+function closeModal(e) {
+  if (e.target.id === 'modal') closeModalBtn();
+}
+function closeModalBtn() {
+  document.getElementById('modal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function copyOutput() {
+  const id = parseInt(document.getElementById('modal-output').dataset.stepId || '0');
+  const text = outputs[id] || '';
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1800);
+  });
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModalBtn();
+});
 
 renderCards();
 </script>
@@ -421,8 +893,9 @@ renderCards();
     "id": s["id"],
     "title": s["title"],
     "description": s["description"],
-    "channels": s["channels"]
-} for s in DEMO_STEPS]))
+    "channels": s["channels"],
+    "tag": s["tag"],
+} for s in DEMO_STEPS])).replace("TAGCOLORS_JSON", json.dumps(TAG_COLORS))
 
 
 @app.get("/", response_class=HTMLResponse)
