@@ -1,21 +1,28 @@
 """
 Unified webhook server — deployed to Render free tier.
-Stable public URL registered once across all four integrations:
+Stable public URL registered once across all integrations:
   POST /webhooks/resend        — Resend email reply / bounce events
   POST /webhooks/sms           — Africa's Talking inbound SMS
   POST /webhooks/calcom        — Cal.com booking events
   POST /webhooks/hubspot       — HubSpot workflow triggers
+  POST /webhooks/voice         — Twilio Voice TwiML (inbound/outbound calls)
+  POST /webhooks/voice/status  — Twilio call status callback
+  POST /internal/register-prospect — Register prospect for email-to-SMS handoff
   GET  /health                 — Render health check
 """
 import os
+import re
 import json
 import hmac
 import hashlib
 import logging
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import httpx
 from fastapi import FastAPI, Request, Header, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 import africastalking
 
@@ -35,17 +42,16 @@ OPT_OUT_COMMANDS = {"STOP", "UNSUB", "UNSUBSCRIBE", "QUIT", "CANCEL"}
 opted_out: set = set()
 conversation_state: dict = {}
 
-# ── Downstream Event Handlers ──
-_email_reply_handlers = []
-_sms_reply_handlers = []
+# Prospect registry: email → {name, company, phone}
+# Populated by /internal/register-prospect when outreach email is sent.
+prospect_registry: dict = {}
 
-def register_email_reply_handler(handler: callable):
-    """Register a callback for inbound email replies."""
-    _email_reply_handlers.append(handler)
-
-def register_sms_reply_handler(handler: callable):
-    """Register a callback for inbound SMS replies."""
-    _sms_reply_handlers.append(handler)
+WARM_KEYWORDS = re.compile(
+    r"\b(interested|yes|sure|sounds good|tell me more|love to|would love|"
+    r"happy to|let'?s|schedule|call|meet|talk|connect|demo|more info|"
+    r"forward|absolutely|definitely|great idea|open to|keen)\b",
+    re.IGNORECASE,
+)
 
 
 # ─────────────────────────────────────────────
@@ -54,6 +60,24 @@ def register_sms_reply_handler(handler: callable):
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "tenacious-webhook-server"}
+
+
+# ─────────────────────────────────────────────
+# Internal — register prospect for email-to-SMS handoff
+# Called by main.py immediately after outreach email is sent.
+# ─────────────────────────────────────────────
+@app.post("/internal/register-prospect")
+async def register_prospect(request: Request):
+    data = await request.json()
+    email = (data.get("email") or "").lower().strip()
+    if email:
+        prospect_registry[email] = {
+            "name":    data.get("name", ""),
+            "company": data.get("company", ""),
+            "phone":   data.get("phone", ""),
+        }
+        logger.info("Prospect registered for handoff: %s (%s)", email, data.get("company"))
+    return {"registered": bool(email), "email": email}
 
 
 # ─────────────────────────────────────────────
@@ -125,22 +149,67 @@ def _handle_email_suppression(data: dict, event_type: str):
 def _handle_email_reply(data: dict):
     from_addr = data.get("from", "unknown")
     text = data.get("text", "")
-    logger.info("Received inbound email reply from %s: %s", from_addr, text[:50])
-    # Clear interface for downstream consumption
+    logger.info("Inbound email reply from %s: %s", from_addr, text[:80])
     _emit_downstream_reply_event({
         "channel": "email",
-        "sender": from_addr,
-        "content": text
+        "sender":  from_addr,
+        "content": text,
     })
 
 
+def _classify_reply_intent(text: str) -> str:
+    """Classify email reply as warm / cold / neutral."""
+    cold = re.search(
+        r"\b(not interested|unsubscribe|remove me|no thanks|stop emailing)\b",
+        text, re.IGNORECASE,
+    )
+    if cold:
+        return "cold"
+    if WARM_KEYWORDS.search(text):
+        return "warm"
+    return "neutral"
+
+
 def _emit_downstream_reply_event(payload: dict):
-    logger.info("Emitting downstream reply event: %s", payload)
-    for handler in _email_reply_handlers:
-        try:
-            handler(payload)
-        except Exception as e:
-            logger.error("Error in email reply handler: %s", e)
+    """
+    Route warm email replies to SMS for scheduling handoff.
+    Logs all events for Langfuse / audit trail.
+    """
+    sender = payload.get("sender", "")
+    content = payload.get("content", "")
+    intent = _classify_reply_intent(content)
+
+    logger.info(
+        "Downstream reply event | channel=email | sender=%s | intent=%s",
+        sender, intent,
+    )
+
+    if intent != "warm":
+        return
+
+    # Look up prospect phone from registry; fall back to DEMO_PHONE env var
+    prospect = prospect_registry.get(sender.lower(), {})
+    phone = prospect.get("phone") or os.environ.get("DEMO_PHONE", "")
+
+    if not phone:
+        logger.warning("Warm reply from %s — no phone on file, skipping SMS handoff", sender)
+        return
+
+    name = (prospect.get("name") or "there").split()[0]
+    company = prospect.get("company") or "your team"
+    sms_body = (
+        f"Hi {name} — thanks for your reply about {company}. "
+        "Happy to set up a quick 30-min intro call. "
+        "What timezone works — EST, CST, or PST? "
+        "Reply STOP to opt out."
+    )
+
+    try:
+        shortcode = os.environ.get("AT_SHORTCODE", "")
+        sms_service.send(sms_body, [phone], sender_id=shortcode or None)
+        logger.info("Email-to-SMS handoff sent to %s for %s", phone, sender)
+    except Exception as exc:
+        logger.warning("SMS handoff failed for %s: %s", sender, exc)
 
 
 # ─────────────────────────────────────────────
@@ -304,6 +373,82 @@ async def _update_hubspot_booking(
                 "cal_booking_id":   cal_booking_id
             }}
         )
+
+
+# ─────────────────────────────────────────────
+# Twilio Voice — TwiML webhook + status callback
+# Docs: https://www.twilio.com/docs/voice/twiml
+# ─────────────────────────────────────────────
+@app.post("/webhooks/voice")
+async def voice_twiml(request: Request):
+    """
+    TwiML response for outbound discovery calls.
+    Twilio hits this URL when the prospect picks up.
+    """
+    data = await request.form()
+    call_status = data.get("CallStatus", "")
+    to_number   = data.get("To", "")
+    logger.info("Voice TwiML: status=%s to=%s", call_status, to_number)
+
+    prospect_name = data.get("prospect_name", "there")
+    company       = data.get("company", "your company")
+
+    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">
+    Hi {prospect_name}, this is Alex from Tenacious Consulting.
+    You recently replied to our outreach about {company}'s engineering team.
+    We help B2B tech companies scale their AI and engineering capacity quickly.
+    I'd love to learn more about what you're working on.
+    Press 1 if now is a good time to chat for a few minutes,
+    or press 2 and we'll send a calendar link to schedule instead.
+  </Say>
+  <Gather numDigits="1" action="/webhooks/voice/gather" method="POST" timeout="10">
+  </Gather>
+  <Say voice="Polly.Joanna">
+    We didn't catch your input. We'll follow up by email. Have a great day.
+  </Say>
+</Response>"""
+    return Response(content=twiml, media_type="application/xml")
+
+
+@app.post("/webhooks/voice/gather")
+async def voice_gather(request: Request):
+    """Handle digit pressed after the opening message."""
+    data   = await request.form()
+    digit  = data.get("Digits", "")
+    logger.info("Voice gather: digit=%s", digit)
+
+    if digit == "1":
+        twiml = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">
+    Great, connecting you now. Please hold for just a moment.
+  </Say>
+  <Dial>
+    <Number>""" + os.environ.get("TENACIOUS_SALES_PHONE", "") + """</Number>
+  </Dial>
+</Response>"""
+    else:
+        twiml = """<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="Polly.Joanna">
+    No problem. We'll send a calendar link to your email shortly. Have a great day.
+  </Say>
+  <Hangup/>
+</Response>"""
+    return Response(content=twiml, media_type="application/xml")
+
+
+@app.post("/webhooks/voice/status")
+async def voice_status(request: Request):
+    """Twilio calls this after the call ends with final status."""
+    data   = await request.form()
+    status = data.get("CallStatus", "")
+    sid    = data.get("CallSid", "")
+    duration = data.get("CallDuration", "0")
+    logger.info("Call completed: sid=%s status=%s duration=%ss", sid, status, duration)
+    return {"received": True}
 
 
 # ─────────────────────────────────────────────

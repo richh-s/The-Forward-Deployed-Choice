@@ -1,6 +1,8 @@
 import json
 import time
+import os
 import anthropic
+import httpx
 from enrichment.mock_brief import (
     SYNTHETIC_PROSPECT,
     HIRING_SIGNAL_BRIEF,
@@ -32,6 +34,24 @@ def run_happy_path():
     send_result = send_outreach(SYNTHETIC_PROSPECT, email, usage)
     print(f"  trace_id:   {send_result['trace_id']}")
     print(f"  cost:       ${send_result['cost_usd']:.5f}")
+
+    # Register prospect for email-to-SMS handoff
+    # When the prospect replies by email, the webhook server will send them an SMS.
+    webhook_base = os.environ.get("WEBHOOK_BASE_URL", "http://localhost:8000")
+    try:
+        httpx.post(
+            f"{webhook_base}/internal/register-prospect",
+            json={
+                "email":   SYNTHETIC_PROSPECT["email"],
+                "name":    SYNTHETIC_PROSPECT["name"],
+                "company": SYNTHETIC_PROSPECT["company"],
+                "phone":   SYNTHETIC_PROSPECT.get("phone", os.environ.get("DEMO_PHONE", "")),
+            },
+            timeout=5,
+        )
+        print(f"  registered: {SYNTHETIC_PROSPECT['email']} for SMS handoff")
+    except Exception as exc:
+        print(f"  [warn] prospect registration skipped: {exc}")
 
     # Step 3: Create HubSpot contact
     print("\nStep 3: Creating HubSpot contact...")

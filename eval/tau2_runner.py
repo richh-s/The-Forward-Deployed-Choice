@@ -148,9 +148,10 @@ def compute_score_log(results: list, trace_ids: list, model: str) -> dict:
     return entry
 
 
-def run_bench(model: str = "openai/gpt-4o-mini", num_tasks: int = 30, trials: int = 5):
+def run_bench(model: str = "openai/gpt-4o-mini", num_tasks: int = 30, trials: int = 1):
     """
     Entry point: run tau2-bench dev slice, write score_log.json.
+    Default is 1 trial per task (per 10Academy April 24 update — 1 trial is sufficient).
     """
     print(f"Starting tau2-bench: model={model}, num_tasks={num_tasks}, trials={trials}")
     tasks = [{"id": i} for i in range(num_tasks)]
@@ -158,13 +159,14 @@ def run_bench(model: str = "openai/gpt-4o-mini", num_tasks: int = 30, trials: in
     all_results, all_trace_ids = [], []
 
     for trial in range(trials):
-        print(f"\n--- Trial {trial + 1}/{trials} ---")
+        if trials > 1:
+            print(f"\n--- Trial {trial + 1}/{trials} ---")
         for task in tasks:
             result, trace_id = run_task_with_trace(task, model)
             all_results.append(result)
             all_trace_ids.append(trace_id)
             status = "PASS" if result["pass"] else "FAIL"
-            print(f"  task {task['id']:02d}: {status} | ${result['cost']:.4f}")
+            print(f"  task {task['id']:02d}: {status} | ${result['cost']:.4f} | {result['latency_ms']/1000:.1f}s | trace={trace_id}")
 
     score = compute_score_log(all_results, all_trace_ids, model)
     print(f"\n=== BENCH COMPLETE ===")
@@ -180,6 +182,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model",     default="openai/gpt-4o-mini")
     parser.add_argument("--num_tasks", type=int, default=30)
-    parser.add_argument("--trials",    type=int, default=5)
+    parser.add_argument("--trials",    type=int, default=1,
+                        help="Trials per task. 10Academy April-24 update: 1 is sufficient.")
+    parser.add_argument("--demo",      action="store_true",
+                        help="Demo mode: run 3 tasks x 1 trial (~5 min) for video recording.")
     args, _ = parser.parse_known_args()
-    run_bench(args.model, args.num_tasks, args.trials)
+
+    if args.demo:
+        print("=== DEMO MODE: 3 tasks x 1 trial ===")
+        run_bench(args.model, num_tasks=3, trials=1)
+    else:
+        run_bench(args.model, args.num_tasks, args.trials)
