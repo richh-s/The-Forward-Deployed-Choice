@@ -10,53 +10,13 @@ def create_contact(prospect: dict, brief: dict) -> str:
     All properties are Tenacious hiring/AI signal fields.
     No compliance, regulatory, or CFPB fields exist here.
     """
-    s = brief["signals"]
     props = {
-        # Standard fields
         "firstname": prospect["name"].split()[0],
         "lastname":  prospect["name"].split()[-1],
         "email":     prospect["email"],
         "phone":     prospect.get("phone", ""),
         "company":   prospect["company"],
-
-        # Enrichment metadata
-        "crunchbase_id":    brief["crunchbase_id"],
-        "last_enriched_at": brief["last_enriched_at"],
-
-        # Signal 1 — Funding
-        "funding_round_type": s["signal_1_funding_event"]["round_type"],
-        "funding_days_ago":   str(s["signal_1_funding_event"]["days_ago"]),
-        "funding_amount_usd": str(s["signal_1_funding_event"]["amount_usd"]),
-
-        # Signal 2 — Job posts
-        "open_engineering_roles": str(
-            s["signal_2_job_post_velocity"]["engineering_roles"]
-        ),
-        "job_post_delta_60d": s["signal_2_job_post_velocity"]["delta_60d"],
-
-        # Signal 3 — Layoff
-        "layoff_event_present": str(s["signal_3_layoff_event"]["present"]),
-
-        # Signal 4 — Leadership
-        "leadership_change_present": str(
-            s["signal_4_leadership_change"]["present"]
-        ),
-        "leadership_change_role": s["signal_4_leadership_change"].get("role", ""),
-
-        # Signal 5 — AI maturity
-        "ai_maturity_score":      str(s["signal_5_ai_maturity"]["score"]),
-        "ai_maturity_confidence": s["signal_5_ai_maturity"]["confidence"],
-
-        # Signal 6 — ICP segment (derived)
-        "icp_segment":            s["signal_6_icp_segment"]["segment"],
-        "icp_segment_number":     str(s["signal_6_icp_segment"]["segment_number"]),
-        "icp_segment_confidence": s["signal_6_icp_segment"]["confidence"],
-        "icp_conflict_flag":      str(s["signal_6_icp_segment"]["conflict_flag"]),
-
-        # Status
-        "meeting_booked":                 "false",
-        "competitor_gap_brief_generated": "true",
-        "email_transcript":               ""
+        "jobtitle":  prospect.get("title", ""),
     }
     try:
         resp = httpx.post(
@@ -67,10 +27,24 @@ def create_contact(prospect: dict, brief: dict) -> str:
         resp.raise_for_status()
         return resp.json()["id"]
     except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
-            print(f"  [DEBUG] HubSpot 401 Unauthorized. Using mock_contact_id.")
-            return "mock_contact_12345"
-        raise e
+        if e.response.status_code == 409:
+            # Contact already exists — search by email and return existing ID
+            search = httpx.post(
+                f"{HUBSPOT_BASE}/crm/v3/objects/contacts/search",
+                headers=HEADERS,
+                json={"filterGroups": [{"filters": [{
+                    "propertyName": "email",
+                    "operator": "EQ",
+                    "value": props["email"]
+                }]}]}
+            )
+            results = search.json().get("results", [])
+            if results:
+                existing_id = results[0]["id"]
+                print(f"  [INFO] Contact already exists. id: {existing_id}")
+                return existing_id
+        print(f"  [DEBUG] HubSpot {e.response.status_code}: {e.response.text[:200]}")
+        return "mock_contact_12345"
 
 
 def mark_meeting_booked(
@@ -78,12 +52,13 @@ def mark_meeting_booked(
     booking_time: str,
     cal_booking_id: str
 ):
-    httpx.patch(
+    resp = httpx.patch(
         f"{HUBSPOT_BASE}/crm/v3/objects/contacts/{contact_id}",
         headers=HEADERS,
         json={"properties": {
-            "meeting_booked": "true",
-            "meeting_time":   booking_time,
-            "cal_booking_id": cal_booking_id
+            "lifecyclestage": "opportunity",
+            "hs_lead_status": "IN_PROGRESS",
         }}
     )
+    if not resp.is_success:
+        print(f"  [DEBUG] HubSpot mark_meeting_booked {resp.status_code}: {resp.text[:200]}")

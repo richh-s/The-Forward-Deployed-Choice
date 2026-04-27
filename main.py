@@ -59,39 +59,17 @@ def run_happy_path():
     print(f"  contact_id:  {contact_id}")
     print(f"  icp_segment: {HIRING_SIGNAL_BRIEF['signals']['signal_6_icp_segment']['segment']}")
 
-    # Step 4: Book Cal.com slot
-    print("\nStep 4: Booking Cal.com discovery call...")
-    slots = get_available_slots(event_type_id=1, date="2026-04-24")
-    first_slot = list(slots.values())[0][0]["time"]
-    booking = book_discovery_call(
-        event_type_id=1,
-        slot_time=first_slot,
-        attendee_name=SYNTHETIC_PROSPECT["name"],
-        attendee_email=SYNTHETIC_PROSPECT["email"],
-        brief=HIRING_SIGNAL_BRIEF,
-        hubspot_contact_id=contact_id
-    )
-    booking_id = booking.get("id", "unknown")
-    print(f"  booking_id:  {booking_id}")
-    print(f"  slot:        {first_slot}")
-
-    # Step 5: Update HubSpot with booking
-    print("\nStep 5: Marking HubSpot contact as booked...")
-    mark_meeting_booked(contact_id, first_slot, str(booking_id))
-
-    print("\n=== HAPPY PATH COMPLETE ===")
+    print("\n=== OUTREACH COMPLETE — AWAITING PROSPECT REPLY ===")
     print(f"  trace_id:   {send_result['trace_id']}")
     print(f"  contact_id: {contact_id}")
-    print(f"  booking_id: {booking_id}")
     print(f"  cost:       ${send_result['cost_usd']:.5f}")
-    print("\nTake screenshots now:")
-    print("  - HubSpot contact record (all fields visible)")
-    print("  - Cal.com booking (both attendees listed)")
+    print()
+    print("Next step: when prospect replies (warm intent detected),")
+    print("  system sends SMS with Cal.com booking link → prospect books → HubSpot updated.")
 
     return {
         "trace_id":   send_result["trace_id"],
         "contact_id": contact_id,
-        "booking_id": booking_id,
         "cost_usd":   send_result["cost_usd"]
     }
 

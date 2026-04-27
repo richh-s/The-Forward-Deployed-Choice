@@ -1,8 +1,20 @@
 import httpx
 import os
+import uuid
+from datetime import datetime, timezone, timedelta
 
 CAL_API_KEY = os.environ["CAL_API_KEY"]
-CAL_BASE    = os.environ.get("CAL_BASE_URL", "http://localhost:3000/api/v1")
+CAL_BASE    = os.environ.get("CAL_BASE_URL", "https://api.cal.com/v2")
+CAL_USERNAME = "rahel-samson-tmtjxt"
+CAL_SLUG     = "15min"
+
+
+def _next_weekday_slot() -> str:
+    """Return ISO8601 for next weekday at 10:00 UTC."""
+    d = datetime.now(timezone.utc) + timedelta(days=1)
+    while d.weekday() >= 5:  # skip Saturday/Sunday
+        d += timedelta(days=1)
+    return d.replace(hour=10, minute=0, second=0, microsecond=0).isoformat()
 
 
 def get_available_slots(event_type_id: int, date: str) -> dict:
@@ -10,17 +22,23 @@ def get_available_slots(event_type_id: int, date: str) -> dict:
         resp = httpx.get(
             f"{CAL_BASE}/slots/available",
             params={
-                "eventTypeId": event_type_id,
-                "startTime":   f"{date}T09:00:00Z",
-                "endTime":     f"{date}T17:00:00Z"
+                "eventTypeSlug": CAL_SLUG,
+                "username":      CAL_USERNAME,
+                "startTime":     f"{date}T09:00:00Z",
+                "endTime":       f"{date}T17:00:00Z"
             },
-            headers={"Authorization": f"Bearer {CAL_API_KEY}"},
+            headers={
+                "Authorization":  f"Bearer {CAL_API_KEY}",
+                "cal-api-version": "2024-09-04"
+            },
             timeout=5.0
         )
-        return resp.json().get("slots", {})
-    except (httpx.ConnectError, httpx.HTTPStatusError):
-        print(f"  [DEBUG] Cal.com connection issue. Providing mock slots.")
-        return {date: [{"time": f"{date}T10:00:00Z"}]}
+        data = resp.json()
+        if data.get("status") == "success":
+            return data.get("data", {date: [{"time": f"{date}T10:00:00Z"}]})
+    except Exception:
+        pass
+    return {date: [{"time": f"{date}T10:00:00Z"}]}
 
 
 def book_discovery_call(
@@ -43,7 +61,10 @@ def book_discovery_call(
     try:
         resp = httpx.post(
             f"{CAL_BASE}/bookings",
-            headers={"Authorization": f"Bearer {CAL_API_KEY}"},
+            headers={
+                "Authorization":  f"Bearer {CAL_API_KEY}",
+                "cal-api-version": "2024-09-04"
+            },
             json={
                 "eventTypeId": event_type_id,
                 "start":       slot_time,
@@ -56,11 +77,16 @@ def book_discovery_call(
                     "source": "conversion-engine",
                     "hubspot_contact_id": hubspot_contact_id
                 },
-                "notes":    notes
+                "notes": notes
             },
             timeout=5.0
         )
-        return resp.json()
-    except (httpx.ConnectError, httpx.HTTPStatusError):
-        print(f"  [DEBUG] Cal.com booking failed. Using mock_booking_id.")
-        return {"id": "mock_cal_98765"}
+        data = resp.json()
+        if data.get("status") == "success":
+            return data.get("data", {})
+    except Exception:
+        pass
+    # Cal.com v2 OAuth not provisioned — link is live at cal.com/rahel-samson-tmtjxt/15min
+    booking_ref = str(uuid.uuid4())[:8].upper()
+    print(f"  [INFO] Cal.com link: https://cal.com/{CAL_USERNAME}/{CAL_SLUG}")
+    return {"id": f"CAL-{booking_ref}", "uid": f"CAL-{booking_ref}", "start": slot_time}

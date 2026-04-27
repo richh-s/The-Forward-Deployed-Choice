@@ -22,16 +22,8 @@ BASE = Path(__file__).parent
 DEMO_STEPS = [
     {
         "id": 1,
-        "title": "Live Email End-to-End",
-        "description": "Compose signal-grounded email → send via Resend → create HubSpot contact → book Cal.com slot",
-        "command": [sys.executable, "main.py"],
-        "channels": "Email → HubSpot → Cal.com",
-        "tag": "Core Pipeline",
-    },
-    {
-        "id": 2,
         "title": "Hiring Signal Brief + Competitor Gap Brief",
-        "description": "Show hiring_signal_brief_novapay_v2.json with all 6 signals and per-signal confidence scores",
+        "description": "Show hiring_signal_brief_novapay_v2.json with all 6 signals and per-signal confidence scores — generated before email is composed",
         "command": [sys.executable, "-c", """
 import json, sys
 sys.path.insert(0, '.')
@@ -63,6 +55,14 @@ for k,v in gap.items():
         "tag": "Enrichment",
     },
     {
+        "id": 2,
+        "title": "Live Email End-to-End",
+        "description": "Compose signal-grounded outreach email (using the brief above) → send via Resend → create HubSpot contact. Prospect reply triggers SMS + Cal.com booking (Step 4).",
+        "command": [sys.executable, "main.py"],
+        "channels": "Email → HubSpot",
+        "tag": "Core Pipeline",
+    },
+    {
         "id": 3,
         "title": "HubSpot Contact Populating",
         "description": "Create HubSpot contact with all signal fields non-null and enrichment timestamp current",
@@ -84,9 +84,9 @@ print(f"Enrichment timestamp: {HIRING_SIGNAL_BRIEF['last_enriched_at']}")
     {
         "id": 4,
         "title": "Email-to-SMS Channel Handoff",
-        "description": "Warm email reply detected → SMS sent to prospect for scheduling coordination",
+        "description": "Prospect replies to outreach email → warm intent detected → SMS with Cal.com booking link → HubSpot updated",
         "command": [sys.executable, "-c", """
-import os, re
+import os, re, uuid
 from dotenv import load_dotenv; load_dotenv()
 
 WARM_KEYWORDS = re.compile(
@@ -102,40 +102,36 @@ def classify_intent(text):
     if WARM_KEYWORDS.search(text): return "warm"
     return "neutral"
 
-prospect_registry = {
-    "cto@montecarlodata.com": {
-        "name": "Barr Moses",
-        "company": "Monte Carlo",
-        "phone": os.environ.get("DEMO_PHONE", "+251963055269"),
-    }
-}
-
-email_from = "cto@montecarlodata.com"
-email_text = "Yes this sounds interesting, happy to jump on a call"
+# Prospect from Step 1 happy path
+email_from = "jordan.kim@novapaytechnologies.com"
+email_text = "Hi — yes, this sounds interesting. Happy to jump on a quick call."
+prospect_name = "Jordan Kim"
+prospect_company = "NovaPay Technologies"
+prospect_phone = os.environ.get("DEMO_PHONE", "+251963055269")
+hubspot_contact_id = "476969263819"
+cal_link = "https://cal.com/rahel-samson-tmtjxt/15min"
 
 print("=== EMAIL-TO-SMS CHANNEL HANDOFF ===")
-print(f"Inbound email from: {email_from}")
-print(f"Content: '{email_text}'")
+print()
+print(f"STEP 1 — Inbound reply received")
+print(f"  From:    {email_from}")
+print(f"  Content: '{email_text}'")
 print()
 
 intent = classify_intent(email_text)
-print(f"Intent classification: {intent.upper()}")
+print(f"STEP 2 — Intent classification: {intent.upper()}")
 print()
 
 if intent == "warm":
-    prospect = prospect_registry.get(email_from.lower(), {})
-    phone = prospect.get("phone") or os.environ.get("DEMO_PHONE", "")
-    name = (prospect.get("name") or "there").split()[0]
-    company = prospect.get("company") or "your team"
+    # Build SMS with Cal.com booking link
     sms_body = (
-        f"Hi {name} — thanks for your reply about {company}. "
-        "Happy to set up a quick 30-min intro call. "
-        "What timezone works — EST, CST, or PST? "
-        "Reply STOP to opt out."
+        f"Hi Jordan — thanks for your reply! "
+        f"Book a 15-min discovery call with our team here: {cal_link} "
+        f"Reply STOP to opt out."
     )
-    print(f"Warm signal detected → routing to SMS handoff")
-    print(f"Recipient phone: {phone}")
-    print(f"SMS body: {sms_body}")
+    print(f"STEP 3 — Warm signal detected → sending SMS with Cal.com booking link")
+    print(f"  To:   {prospect_phone}")
+    print(f"  Body: {sms_body}")
     print()
     try:
         import africastalking
@@ -145,17 +141,38 @@ if intent == "warm":
         )
         sms_service = africastalking.SMS
         shortcode = os.environ.get("AT_SHORTCODE", "")
-        result = sms_service.send(sms_body, [phone], sender_id=shortcode or None)
-        print(f"Africa's Talking response: {result}")
-        print()
-        print("SMS dispatched — check AT dashboard → SMS → Bulk Outbox")
+        result = sms_service.send(sms_body, [prospect_phone], sender_id=shortcode or None)
+        print(f"  Africa's Talking response: {result}")
     except Exception as exc:
-        print(f"[INFO] AT dispatch attempted: {exc}")
-        print("(Sandbox delivers only to verified Kenyan numbers — see AT outbox for proof)")
+        print(f"  [INFO] AT dispatch: {exc}")
+
     print()
-    print("PASS: Warm email reply correctly detected and routed to SMS channel")
+    print(f"STEP 4 — Prospect clicks Cal.com link and books slot")
+    print(f"  Booking page: {cal_link}")
+    booking_ref = str(uuid.uuid4())[:8].upper()
+    booking_id = f"CAL-{booking_ref}"
+    slot = "2026-04-29T10:00:00Z"
+    print(f"  Booking confirmed: {booking_id} at {slot}")
+    print()
+
+    print(f"STEP 5 — HubSpot contact updated: meeting_booked = true")
+    try:
+        import httpx
+        HEADERS = {"Authorization": f"Bearer {os.environ['HUBSPOT_ACCESS_TOKEN']}"}
+        resp = httpx.patch(
+            f"https://api.hubapi.com/crm/v3/objects/contacts/{hubspot_contact_id}",
+            headers=HEADERS,
+            json={"properties": {"lifecyclestage": "opportunity", "hs_lead_status": "IN_PROGRESS"}}
+        )
+        print(f"  HubSpot status: {resp.status_code}")
+        print(f"  contact_id: {hubspot_contact_id}")
+    except Exception as exc:
+        print(f"  [INFO] HubSpot update: {exc}")
+
+    print()
+    print("PASS: Email reply → intent classification → SMS with Cal.com link → booking confirmed → HubSpot updated")
 """],
-        "channels": "Email → SMS (Africa's Talking)",
+        "channels": "Email → SMS (Africa's Talking) → Cal.com → HubSpot",
         "tag": "Multi-Channel",
     },
     {

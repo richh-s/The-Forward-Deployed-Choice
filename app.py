@@ -23,6 +23,10 @@ load_dotenv()
 import httpx
 from fastapi import FastAPI, Request, Header, HTTPException
 from fastapi.responses import JSONResponse, Response
+import imaplib
+import email as email_lib
+import threading
+import time
 
 import africastalking
 
@@ -467,3 +471,72 @@ async def hubspot_webhook(request: Request):
             ev.get("objectId")
         )
     return {"received": len(events)}
+
+
+# ─────────────────────────────────────────────
+# Gmail IMAP listener — polls for prospect replies
+# ─────────────────────────────────────────────
+_seen_email_ids: set = set()
+
+def _gmail_poll():
+    gmail_user = os.environ.get("GMAIL_USER", "")
+    gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "")
+    if not gmail_user or not gmail_pass:
+        return
+    logger.info("[GMAIL] Poller started for %s", gmail_user)
+    while True:
+        try:
+            mail = imaplib.IMAP4_SSL("imap.gmail.com")
+            mail.login(gmail_user, gmail_pass)
+            mail.select("inbox")
+            _, data = mail.search(None, 'UNSEEN FROM ""')
+            ids = data[0].split()
+            # Also search for any unseen messages
+            _, data2 = mail.search(None, "UNSEEN")
+            ids = list(set(ids + data2[0].split()))
+            for num in ids:
+                if num in _seen_email_ids:
+                    continue
+                _seen_email_ids.add(num)
+                _, msg_data = mail.fetch(num, "(RFC822)")
+                raw = msg_data[0][1]
+                msg = email_lib.message_from_bytes(raw)
+                from_addr = email_lib.utils.parseaddr(msg.get("From", ""))[1].lower()
+                subject = msg.get("Subject", "")
+                # Skip transactional/notification senders — only process human replies
+                _skip_domains = ("resend.dev", "resend.com", "noreply", "no-reply",
+                                 "notifications.", "mailer-daemon", "postmaster",
+                                 "linkedin.com", "freelancer.com", "facebookmail.com",
+                                 "accounts.google", "mail.google")
+                if any(d in from_addr for d in _skip_domains):
+                    logger.debug("[GMAIL] Skipping transactional email from %s", from_addr)
+                    continue
+                # Extract plain text body
+                body = ""
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        if part.get_content_type() == "text/plain":
+                            body = part.get_payload(decode=True).decode("utf-8", errors="ignore")
+                            break
+                else:
+                    body = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
+                body = body[:500].strip()
+                if not body:
+                    continue
+                logger.info("[GMAIL] New email from %s: %s", from_addr, body[:80])
+                _handle_email_reply({"from": from_addr, "text": body, "subject": subject})
+            mail.logout()
+        except Exception as exc:
+            logger.warning("[GMAIL] Poll error: %s", exc)
+        time.sleep(15)  # poll every 15 seconds
+
+
+def start_gmail_poller():
+    t = threading.Thread(target=_gmail_poll, daemon=True)
+    t.start()
+    logger.info("[GMAIL] Background poller thread started")
+
+
+# Start on import if credentials are available
+if os.environ.get("GMAIL_APP_PASSWORD"):
+    start_gmail_poller()
