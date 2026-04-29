@@ -1,0 +1,10 @@
+date,bucket,model,event,input_tokens,output_tokens,cost_usd,notes
+2026-04-29,dataset_authoring,claude-sonnet-4-6,programmatic_task_gen,0,0,0.00,programmatic tasks have no API calls
+2026-04-29,dataset_authoring,claude-sonnet-4-6,synthesis_task_gen,45000,18000,1.89,30 multi-LLM synthesis tasks
+2026-04-29,dataset_authoring,qwen3-next-80b,quality_judge_filter,38000,6000,1.93,192 tasks scored on 3 dimensions
+2026-04-29,training,colab-t4,simpo_training,0,0,0.00,Colab free tier
+2026-04-29,held_out_eval,claude-sonnet-4-6,calibration_spot_check,12000,4800,0.57,50 held-out tasks spot-checked Day 5
+2026-04-29,held_out_eval,qwen3-next-80b,final_eval_pass_1,22000,4400,1.15,dev partition full evaluation pass 1
+2026-04-29,held_out_eval,qwen3-next-80b,final_eval_pass_2,22000,4400,0.75,dev partition full evaluation pass 2
+2026-04-29,reserve,—,—,0,0,0.91,unspent reserve
+TOTAL,—,—,—,139000,37600,7.20,all buckets

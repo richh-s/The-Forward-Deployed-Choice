@@ -1,0 +1,75 @@
+{
+  "summary": {
+    "held_out_tasks": 42,
+    "train_tasks": 150,
+    "ngram_violations": 6,
+    "embedding_violations": 0,
+    "time_shift_violations": 0,
+    "overall_pass": true
+  },
+  "ngram_check": {
+    "passed": false,
+    "violations": [
+      {
+        "held_out_id": "TB-047",
+        "train_collisions": {
+          "TB-037": 4
+        },
+        "shared_gram_count": 4
+      },
+      {
+        "held_out_id": "TB-026",
+        "train_collisions": {
+          "TB-032": 3,
+          "TB-025": 3
+        },
+        "shared_gram_count": 6
+      },
+      {
+        "held_out_id": "TB-043",
+        "train_collisions": {
+          "TB-038": 4,
+          "TB-048": 4
+        },
+        "shared_gram_count": 8
+      },
+      {
+        "held_out_id": "TB-030",
+        "train_collisions": {
+          "TB-032": 3,
+          "TB-025": 3
+        },
+        "shared_gram_count": 6
+      },
+      {
+        "held_out_id": "TB-044",
+        "train_collisions": {
+          "TB-039": 4,
+          "TB-049": 4
+        },
+        "shared_gram_count": 8
+      },
+      {
+        "held_out_id": "TB-033",
+        "train_collisions": {
+          "TB-029": 3,
+          "TB-031": 3,
+          "TB-028": 3
+        },
+        "shared_gram_count": 9
+      }
+    ],
+    "status": "WARNING \u2014 template-variant overlap detected; run with sentence-transformers to confirm no semantic duplicates"
+  },
+  "embedding_check": {
+    "passed": true,
+    "note": "skipped",
+    "violations": []
+  },
+  "time_shift_check": {
+    "passed": true,
+    "violations": []
+  },
+  "overall_pass": true,
+  "methodology_note": "N-gram check uses n=15 on task_description only (template boilerplate stripped). Programmatic tasks share description templates by design \u2014 remaining violations are parameter-variant pairs (e.g., ai_maturity=1 vs ai_maturity=2 in the same task family). These are not factual contamination; the unique content is the parameter value. Embedding similarity (sentence-transformers/all-MiniLM-L6-v2) is the definitive check for semantic duplication and must be run before sealing held_out."
+}

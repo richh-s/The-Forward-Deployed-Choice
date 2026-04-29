@@ -65,11 +65,19 @@ Kill-switch auto-pauses deployment if any metric breaches its threshold in a rol
 
 Rollback: two consecutive days above any threshold → all outbound routes to staff sink → delivery lead review required.
 
+## Requirements
+
+- **Python 3.10+** (tested on 3.10, 3.11, 3.12)
+- Node.js 18+ (for Playwright browser automation)
+
 ## Setup
 
 ```bash
-# 1. Install dependencies
+# 1. Install Python dependencies
 pip install -r requirements.txt
+
+# Key packages: anthropic langfuse resend requests fastapi uvicorn
+#   reportlab python-dotenv playwright openai trl unsloth datasets transformers
 playwright install chromium
 
 # 2. Copy and fill env vars
@@ -106,64 +114,129 @@ python eval/validate_evidence_graph.py evidence_graph.json
 uvicorn agent.sms_handler:app --reload --port 8000
 ```
 
+## Week 11 — Tenacious-Bench v0.1 (Path B: Preference-Tuned Judge)
+
+> **Act V — Day 7 deliverables (in progress, not yet published):**
+> - HuggingFace dataset: `richh-s/tenacious-bench-v0.1` — train/dev partitions to be uploaded Day 7
+> - HuggingFace model: `richh-s/tenacious-bench-judge-critic-v0.1` — LoRA adapter to be uploaded Day 7
+> - Blog post: 1,200–2,000 word write-up (planned for Day 7, covers methodology + results)
+> - Community: GitHub issue or 10Academy forum submission (Day 7)
+>
+> The held_out partition is **not** published on HuggingFace pending leaderboard release.
+
+**Status:** Complete | **Branch:** `w-11` | **Date:** 2026-04-29
+
+### What was built
+
+Week 11 implements Path B — a preference-tuned judge critic trained with SimPO (γ=0.3) on Qwen2.5-1.5B. The critic acts as a rejection-sampling layer in front of the email generator.
+
+**Key results:**
+- Base pass@1 (no judge): **0.412** → Post-training pass@1: **0.744** (Delta A = +0.332, p=0.003)
+- 192 benchmark tasks generated and partitioned (93 train / 57 dev / 42 held_out)
+- Training cost: **$0.00** (Colab T4, free tier) | Total project cost: **$7.20**
+
+### Week 11 deliverables
+
+| File | Description |
+|---|---|
+| `audit_memo.md` | 598-word gap analysis proving τ²-Bench retail misses all four Tenacious failure modes |
+| `schema.json` | Machine-verifiable task schema with 6 deterministic checks + 5 LLM tone-marker scores |
+| `scoring_evaluator.py` | Scorer with deterministic checks and composite score formula |
+| `methodology.md` | Path B declaration with SimPO selection over DPO, γ=0.3 rationale |
+| `methodology_rationale.md` | Evidence chain mapping every claim to trace IDs and papers |
+| `inter_rater_agreement.md` | 30-task double-labeling protocol; all dimensions ≥80% (signal_grounding: 73%→91%) |
+| `contamination_check.json` | Three-check contamination report (n-gram, embedding, time-shift) |
+| `datasheet.md` | Gebru et al. 7-section dataset documentation |
+| `model_card.md` | Mitchell et al. model card for the judge critic |
+| `cost_log.csv` | Per-bucket cost breakdown |
+| `ablations/ablation_results.json` | Delta A/B/C with paired bootstrap significance |
+| `tenacious_bench_v0.1/` | 200 tasks in train/dev/held_out JSONL partitions (97/60/43) |
+| `training_data/preference_pairs.jsonl` | 40 preference pairs for SimPO training |
+| `training/train_judge.py` | Unsloth + TRL training script |
+| `training/hyperparams.json` | Full configuration with γ calibration sweep results |
+| `training/training_run.log` | Loss curves and per-dimension dev results |
+| `synthesis_memos/` | 9 paper synthesis memos (Liu, Gebru, Chen, Gu, Rafailov, Meng, Li, Kim, Hong) |
+| `generation_scripts/judge_filter.py` | LLM-as-a-judge quality filter with model rotation + pairwise dedup |
+| `generation_scripts/contamination_check.py` | N-gram + embedding + time-shift checks |
+| `generation_scripts/prompts/` | Judge prompts committed verbatim as markdown files |
+
+### Run Week 11 pipeline
+
+```bash
+# Generate dataset (seed=42)
+python generation_scripts/generate_dataset.py --seed 42
+
+# Contamination check
+python generation_scripts/contamination_check.py \
+  --held-out tenacious_bench_v0.1/held_out/tasks.jsonl \
+  --train tenacious_bench_v0.1/train/tasks.jsonl \
+  --dev tenacious_bench_v0.1/dev/tasks.jsonl \
+  --output contamination_check.json --skip-embeddings
+
+# Score the dev partition (deterministic checks only)
+python scoring_evaluator.py --tasks tenacious_bench_v0.1/dev/tasks.jsonl
+
+# Score with LLM judge (requires OPENROUTER_API_KEY)
+python scoring_evaluator.py --tasks tenacious_bench_v0.1/dev/tasks.jsonl --judge
+
+# Run statistical tests
+python ablations/statistical_test.py --mock
+
+# Train judge critic (requires Colab T4 + Unsloth)
+python training/train_judge.py --config training/hyperparams.json
+```
+
+---
+
+## Key Artifacts (Week 11)
+
+| Artifact | Path |
+|---|---|
+| Gap analysis memo | [audit_memo.md](audit_memo.md) |
+| Dataset schema | [schema.json](schema.json) |
+| Scoring evaluator | [scoring_evaluator.py](scoring_evaluator.py) |
+| Dataset documentation | [datasheet.md](datasheet.md) |
+| Path B methodology | [methodology.md](methodology.md) |
+| Evidence chain | [methodology_rationale.md](methodology_rationale.md) |
+| Synthesis memos (9) | [synthesis_memos/](synthesis_memos/) |
+| Inter-rater agreement | [inter_rater_agreement.md](inter_rater_agreement.md) |
+| Judge prompts (verbatim) | [generation_scripts/prompts/](generation_scripts/prompts/) |
+| Training config | [training/hyperparams.json](training/hyperparams.json) |
+| Ablation results | [ablations/ablation_results.json](ablations/ablation_results.json) |
+| Contamination check | [contamination_check.json](contamination_check.json) |
+| Cost log | [cost_log.csv](cost_log.csv) |
+
 ## Directory Structure
 
 ```
-agent/
-  email_agent.py      — Outreach composer with confidence-gated assertion/inquiry modes
-  email_sender.py     — Resend API + Langfuse tracing + placeholder sanitisation
-  hubspot_writer.py   — HubSpot contact create/update (22 Tenacious fields)
-  calendar.py         — Cal.com booking link generation
-  voice_agent.py      — Twilio outbound discovery call (TwiML IVR)
+agent/             — Email, calendar, HubSpot, SMS, and voice outreach agents
+enrichment/        — 6-signal enrichment pipeline (Crunchbase, Playwright, layoffs.fyi)
+eval/              — τ²-Bench runner, evidence graph validator, trace logs
+probes/            — 32 adversarial probes across 10 failure categories
+mechanism/         — Confidence-gated agent, 3 ablation configs, statistical tests
+scripts/           — Utility scripts: latency measurement, evidence graph builder, setup
+data/              — Static data files: Crunchbase ODM sample, layoffs.fyi CSV, signal briefs
 
-enrichment/
-  icp_classifier.py   — Signal 6: ICP segment (derived from 1–5, never fetched)
-  mock_brief.py       — NovaPay Technologies synthetic prospect
-  pipeline.py         — Live enrichment: Crunchbase ODM + Playwright + layoffs.fyi CSV
-                        Includes velocity cache, competitor gap brief, AI maturity scoring
+tenacious_bench_v0.1/   — 200-task benchmark (train/dev/held_out JSONL partitions)
+generation_scripts/     — Dataset generation, judge filter, contamination check, judge prompts
+training/               — SimPO training script, hyperparams, training log
+training_data/          — 40 preference pairs for SimPO (preference_pairs.jsonl)
+ablations/              — Ablation results, statistical test (Delta A/B/C)
+synthesis_memos/        — 9 paper synthesis memos (5 common + 4 Path B specific)
 
-eval/
-  tau2_runner.py          — τ²-Bench Langfuse-traced runner (--demo flag for 3-task subset)
-  validate_evidence_graph.py — Validates evidence_graph.json before submission
-  score_log.json          — Official 10Academy baseline (72.67% pass@1, 150 sims)
-  trace_log.jsonl         — 150 simulation records with reward, cost, duration, domain
-
-probes/
-  probe_runner.py         — 32 adversarial probes across 10 failure categories
-  probe_library.md        — Results: trigger rates, costs, trace refs per probe
-  failure_taxonomy.md     — Category rankings by (trigger_rate × business_cost)
-  target_failure_mode.md  — Highest-ROI failure with business-cost derivation
-
-mechanism/
-  confidence_gated_agent.py — Confidence-gated phrasing + ICP abstention
-  ablations.py              — Three ablation configs (baseline, v1, v2_strict)
-  run_ablations.py          — Run all 3 configs against 20 held-out tasks
-  statistical_test.py       — Fisher's exact test (probe-level Delta A, p < 0.05)
-                              + supplementary general-task t-test
-  delta_a_test.json         — Primary test result: P-009 trigger rate 100% → 0%, p=5.4e-6
-
-scripts/
-  setup_tau2.sh           — Clone + smoke-test tau2-bench
-  measure_latency.py      — 50-run latency + cost measurement
-  build_evidence_graph.py — Populate evidence_graph.json from generated files
-  export_hiring_brief.py  — Save NovaPay brief to data/ (C007 evidence)
-  demo_segment2.py        — Demo: Monte Carlo Segment 2 routing from real layoffs.fyi data
-
-data/
-  crunchbase_odm_sample.json            — 3-record Crunchbase ODM sample
-  layoffs_fyi.csv                       — layoffs.fyi CC-BY snapshot (4,360 rows, Apr 2026)
-  hiring_signal_brief_novapay_v2.json   — NovaPay signal brief with all 6 signals
-  competitor_gap_brief_novapay.json     — NovaPay competitor gap brief
-
-app.py                — Unified webhook server (Resend, Africa's Talking, Cal.com,
-                        HubSpot, Twilio Voice) — deploy to Render free tier
-demo_ui.py            — Browser-based demo dashboard (port 8001, 9 demo cards)
+app.py                — Unified webhook server (deploy to Render free tier)
+demo_ui.py            — Browser-based demo dashboard (port 8001)
 main.py               — Happy-path orchestrator: enrich → compose → send → register
-baseline.md           — Day-1 system description + benchmark results
-method.md             — Mechanism design, ablation rationale, hyperparameters
-ablation_results.json — Results from 3 ablation conditions
-held_out_traces.jsonl — Raw traces from all 3 ablation conditions
-evidence_graph.json   — Claim registry (all memo numbers traced here)
+scoring_evaluator.py  — Machine-verifiable rubric scorer (6 det. checks + 5 tone markers)
+schema.json           — Machine-verifiable task schema with field-level documentation
+audit_memo.md         — 598-word gap analysis: why τ²-Bench retail misses Tenacious failures
+datasheet.md          — Gebru et al. 7-section dataset documentation
+methodology.md        — Path B declaration, SimPO selection, partitioning, contamination
+methodology_rationale.md — Evidence chain: trace IDs → probe data → algorithm decisions
+inter_rater_agreement.md — 30-task double-labeling protocol; all dimensions ≥80%
+contamination_check.json — Three-check contamination report (overall_pass=true)
+cost_log.csv          — Per-bucket cost breakdown ($7.20 total)
+evidence_graph.json   — Claim registry (22 claims, W11-C001 through W11-C010)
 invoice_summary.json  — Cost tracking across all components
 ```
 

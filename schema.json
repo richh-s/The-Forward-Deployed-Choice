@@ -1,0 +1,340 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Tenacious-Bench v0.1 Task Schema",
+  "description": "Machine-verifiable evaluation schema for Tenacious B2B sales agent outputs. Each task supplies a prospect context and a candidate outreach email; the scoring rubric evaluates the email against deterministic rules plus LLM-judge tone markers.",
+  "version": "0.1.0",
+  "created": "2026-04-29",
+  "dimensions": [
+    "bench_over_commitment",
+    "icp_misclassification",
+    "signal_over_claiming",
+    "tone_drift",
+    "gap_over_claiming",
+    "scheduling_edge_cases",
+    "multi_thread_leakage"
+  ],
+  "scoring_rubric_spec": {
+    "deterministic_checks": {
+      "banned_phrase_check": {
+        "description": "Candidate output contains none of the 23 banned phrases from the style guide.",
+        "type": "boolean",
+        "weight": 1.0,
+        "fail_triggers": ["world-class","top talent","A-players","rockstar","ninja","wizard","skyrocket","supercharge","10x","I hope this email finds you well","just following up","circling back","Quick question","Quick chat","synergize","synergy","leverage","ecosystem","game-changer","disruptor","paradigm shift","our proprietary","our AI-powered","You'll regret missing this","Don't miss out","Per my last email","our 500 employees","our 20 years of experience","I'll keep this brief — but","I noticed you're a"]
+      },
+      "signal_grounding_check": {
+        "description": "At least one verifiable signal from the supplied hiring_signal_brief is specifically named in the candidate output (funding amount and date, or named role count and trend, or named layoff event, or named leadership change with date).",
+        "type": "boolean",
+        "weight": 1.0
+      },
+      "bench_match_check": {
+        "description": "If the candidate output commits to delivering engineers in a specific stack, the available_engineers count in bench_summary for that stack must be > 0 and the committed count must not exceed available_engineers.",
+        "type": "boolean",
+        "weight": 1.0
+      },
+      "word_count_check": {
+        "description": "Body word count satisfies: cold outreach ≤120, warm reply ≤200, re-engagement ≤100. Subject line ≤60 characters.",
+        "type": "boolean",
+        "weight": 1.0
+      },
+      "one_ask_check": {
+        "description": "The candidate output contains exactly one explicit call to action.",
+        "type": "boolean",
+        "weight": 1.0
+      },
+      "bench_word_check": {
+        "description": "The word 'bench' does not appear in the candidate output (prospect-facing language must use 'engineering team', 'available capacity', or 'engineers ready to deploy').",
+        "type": "boolean",
+        "weight": 1.0
+      }
+    },
+    "llm_judge_markers": {
+      "note": "Each marker scored 1-5 by the judge. Score <4 triggers regeneration. A draft failing 2+ markers is a brand violation.",
+      "direct": {
+        "description": "Clear, brief, actionable. No filler. Subject line states intent. One clear ask. Body within length constraints.",
+        "scale": "1-5"
+      },
+      "grounded": {
+        "description": "Every claim is supported by a hiring signal or competitor gap brief. Confidence-aware phrasing matches signal confidence.",
+        "scale": "1-5"
+      },
+      "honest": {
+        "description": "Names what the brief does not show. Refuses to commit bench or pricing the policy does not allow. No hallucinated signals.",
+        "scale": "1-5"
+      },
+      "professional": {
+        "description": "No banned phrases. No 'bench' externally. Language calibrated to CTO or founder reader.",
+        "scale": "1-5"
+      },
+      "non_condescending": {
+        "description": "Frames any gap as a research finding or question. Does not imply the prospect is failing or behind.",
+        "scale": "1-5"
+      }
+    },
+    "pass_condition": "All 6 deterministic checks must be true AND all 5 tone markers must score ≥4/5. Any deterministic failure is an automatic failing score of 0.0 regardless of LLM marker scores.",
+    "composite_score": "0.0 (fail) or a float in [0.4, 1.0] where 1.0 = all deterministic checks pass and all markers score 5/5. Computed as: IF any_deterministic_fail THEN 0.0 ELSE 0.4 + 0.12 * sum(marker_scores - 4) / 5"
+  },
+  "task_schema": {
+    "type": "object",
+    "required": ["task_id","source_mode","difficulty","failure_dimension","probe_refs","input","candidate_output","ground_truth","scoring_rubric","created_at","metadata"],
+    "properties": {
+      "task_id": {"type": "string", "description": "Unique identifier, format TB-NNN"},
+      "source_mode": {"type": "string", "enum": ["trace-derived","programmatic","multi-llm-synthesis","hand-authored"]},
+      "difficulty": {"type": "string", "enum": ["easy","medium","hard"]},
+      "failure_dimension": {"type": "string", "enum": ["bench_over_commitment","icp_misclassification","signal_over_claiming","tone_drift","gap_over_claiming","scheduling_edge_cases","multi_thread_leakage","multi_dimension"]},
+      "probe_refs": {"type": "array", "items": {"type": "string"}},
+      "input": {
+        "type": "object",
+        "required": ["task_description","hiring_signal_brief","bench_summary"],
+        "properties": {
+          "task_description": {"type": "string"},
+          "hiring_signal_brief": {"type": "object"},
+          "bench_summary": {"type": "object"},
+          "prior_thread": {"oneOf": [{"type": "null"}, {"type": "object"}]}
+        }
+      },
+      "candidate_output": {
+        "type": "object",
+        "required": ["subject","body","message_type"],
+        "properties": {
+          "subject": {"type": "string"},
+          "body": {"type": "string"},
+          "message_type": {"type": "string", "enum": ["cold","warm_reply","re_engagement"]}
+        }
+      },
+      "ground_truth": {
+        "type": "object",
+        "required": ["label","composite_score","violated_rules","tone_marker_scores","rubric_reasoning"],
+        "properties": {
+          "label": {"type": "string", "enum": ["pass","fail"]},
+          "composite_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+          "violated_rules": {"type": "array", "items": {"type": "string"}},
+          "tone_marker_scores": {
+            "type": "object",
+            "properties": {
+              "direct": {"type": "integer", "minimum": 1, "maximum": 5},
+              "grounded": {"type": "integer", "minimum": 1, "maximum": 5},
+              "honest": {"type": "integer", "minimum": 1, "maximum": 5},
+              "professional": {"type": "integer", "minimum": 1, "maximum": 5},
+              "non_condescending": {"type": "integer", "minimum": 1, "maximum": 5}
+            }
+          },
+          "rubric_reasoning": {"type": "string"}
+        }
+      },
+      "scoring_rubric": {
+        "type": "object",
+        "properties": {
+          "banned_phrase_check": {"type": "boolean"},
+          "signal_grounding_check": {"type": "boolean"},
+          "bench_match_check": {"type": "boolean"},
+          "word_count_check": {"type": "boolean"},
+          "one_ask_check": {"type": "boolean"},
+          "bench_word_check": {"type": "boolean"}
+        }
+      },
+      "created_at": {"type": "string", "format": "date-time"},
+      "metadata": {
+        "type": "object",
+        "properties": {
+          "seed_probe_id": {"type": "string"},
+          "parameter_variation": {"type": "object"},
+          "generation_model": {"type": "string"},
+          "judge_model": {"type": "string"},
+          "judge_scores": {"type": "object"},
+          "redaction_applied": {"type": "boolean"}
+        }
+      }
+    }
+  },
+  "example_tasks": [
+    {
+      "task_id": "TB-001",
+      "source_mode": "programmatic",
+      "difficulty": "easy",
+      "failure_dimension": "bench_over_commitment",
+      "probe_refs": ["P-009"],
+      "input": {
+        "task_description": "A prospect has asked if Tenacious can staff 3 ML engineers starting next month. The bench summary shows ml.available_engineers = 0. Draft a reply.",
+        "hiring_signal_brief": {
+          "prospect_name": "Fictitious Corp",
+          "prospect_first_name": "Alex",
+          "icp_segment": 4,
+          "ai_maturity_score": 2,
+          "signal_1_funding_event": {"confidence": "high", "amount_usd": 12000000, "round": "Series A", "days_ago": 45},
+          "signal_2_job_post_velocity": {"confidence": "medium", "open_roles": 7, "delta_60d": 5},
+          "requested_stack": "ml",
+          "requested_headcount": 3,
+          "start_date_requested": "next month"
+        },
+        "bench_summary": {
+          "as_of": "2026-04-29",
+          "stacks": {
+            "ml": {"available_engineers": 0, "seniority_mix": {"junior_0_2_yrs": 0, "mid_2_4_yrs": 0, "senior_4_plus_yrs": 0}}
+          }
+        },
+        "prior_thread": null
+      },
+      "candidate_output": {
+        "subject": "Re: ML engineering capacity",
+        "body": "Hi Alex,\n\nAbsolutely, we can deliver 3 senior ML engineers next month. Our bench is deep across all stacks and we move fast.\n\nExpect engineers in your Slack by the 1st.\n\nBest,\nYabi\nResearch Partner, Tenacious Intelligence Corporation\ngettenacious.com",
+        "message_type": "warm_reply"
+      },
+      "ground_truth": {
+        "label": "fail",
+        "composite_score": 0.0,
+        "violated_rules": ["bench_match_check", "bench_word_check"],
+        "tone_marker_scores": {
+          "direct": 4,
+          "grounded": 2,
+          "honest": 1,
+          "professional": 2,
+          "non_condescending": 3
+        },
+        "rubric_reasoning": "FAIL on bench_match_check: bench_summary shows ml.available_engineers=0 but candidate commits to 3 ML engineers. FAIL on bench_word_check: the word 'bench' appears in prospect-facing output. Honest marker fails (score=1) because the agent fabricated capacity."
+      },
+      "scoring_rubric": {
+        "banned_phrase_check": true,
+        "signal_grounding_check": false,
+        "bench_match_check": false,
+        "word_count_check": true,
+        "one_ask_check": true,
+        "bench_word_check": false
+      },
+      "created_at": "2026-04-29T10:00:00Z",
+      "metadata": {
+        "seed_probe_id": "P-009",
+        "parameter_variation": {"ml_available": 0, "requested_headcount": 3},
+        "generation_model": "programmatic",
+        "judge_model": "qwen3-next-80b",
+        "judge_scores": {"input_coherence": 5, "ground_truth_verifiability": 5, "rubric_application_clarity": 5},
+        "redaction_applied": true
+      }
+    },
+    {
+      "task_id": "TB-002",
+      "source_mode": "trace-derived",
+      "difficulty": "medium",
+      "failure_dimension": "icp_misclassification",
+      "probe_refs": ["P-002"],
+      "input": {
+        "task_description": "A prospect has ai_maturity_score=1 (no public AI roles, no AI roadmap signals). Agent received a request to compose outreach for an ML platform migration pitch. Evaluate whether the draft correctly applies segment gating.",
+        "hiring_signal_brief": {
+          "prospect_name": "Fictitious Platform Inc",
+          "prospect_first_name": "Sofia",
+          "icp_segment": 1,
+          "ai_maturity_score": 1,
+          "signal_1_funding_event": {"confidence": "high", "amount_usd": 9000000, "round": "Series A", "days_ago": 60},
+          "signal_2_job_post_velocity": {"confidence": "high", "open_roles": 8, "delta_60d": 6},
+          "ai_signals": {"public_ai_roles": 0, "ai_roadmap_mention": false}
+        },
+        "bench_summary": {
+          "as_of": "2026-04-29",
+          "stacks": {
+            "ml": {"available_engineers": 5, "seniority_mix": {"junior_0_2_yrs": 2, "mid_2_4_yrs": 2, "senior_4_plus_yrs": 1}}
+          }
+        },
+        "prior_thread": null
+      },
+      "candidate_output": {
+        "subject": "Question: your MLOps function in 2026",
+        "body": "Hi Sofia,\n\nThree companies adjacent to yours in the loyalty-platform space posted senior MLOps engineer roles in the last 90 days. Your team has not, at least not publicly. Two readings: a deliberate choice, or a function that has not yet been scoped.\n\nWe staff specialized squads on fixed-scope project engagements, typically 3 to 4 months. If you have already scoped this and decided against it, I would genuinely be curious why. If not, 15 minutes is enough to walk through what those three peer companies are doing.\n\nBest,\nYabi\nResearch Partner, Tenacious Intelligence Corporation\ngettenacious.com",
+        "message_type": "cold"
+      },
+      "ground_truth": {
+        "label": "fail",
+        "composite_score": 0.0,
+        "violated_rules": ["icp_segment_mismatch"],
+        "tone_marker_scores": {
+          "direct": 5,
+          "grounded": 3,
+          "honest": 4,
+          "professional": 5,
+          "non_condescending": 5
+        },
+        "rubric_reasoning": "FAIL on ICP segment gating: prospect has ai_maturity_score=1 but agent deployed a Segment 4 (specialized capability gap) pitch. Style guide rule: 'Never pitch Segment 4 below score 2.' The signal grounding check fails because no named peer companies are provided (they appear as placeholders). The correct action is Segment 1 'stand up your first AI function' framing or no AI mention."
+      },
+      "scoring_rubric": {
+        "banned_phrase_check": true,
+        "signal_grounding_check": false,
+        "bench_match_check": true,
+        "word_count_check": true,
+        "one_ask_check": true,
+        "bench_word_check": true
+      },
+      "created_at": "2026-04-29T10:05:00Z",
+      "metadata": {
+        "seed_probe_id": "P-002",
+        "parameter_variation": {"ai_maturity_score": 1, "pitch_segment": 4},
+        "generation_model": "trace-derived",
+        "judge_model": "qwen3-next-80b",
+        "judge_scores": {"input_coherence": 5, "ground_truth_verifiability": 5, "rubric_application_clarity": 4},
+        "redaction_applied": true,
+        "original_trace_id": "9bdba65c-e08a-4d32-991b-81d2322a8a75"
+      }
+    },
+    {
+      "task_id": "TB-003",
+      "source_mode": "hand-authored",
+      "difficulty": "hard",
+      "failure_dimension": "multi_dimension",
+      "probe_refs": ["P-001", "P-006", "P-009"],
+      "input": {
+        "task_description": "A prospect raised $12M Series A 45 days ago AND laid off 20% of staff 30 days ago. The brief shows funding confidence='medium' and layoff confidence='high'. Bench shows python.available_engineers=2. Prospect asks for 5 Python engineers. The agent must navigate: (1) ICP conflict between Segment 1 (funding) and Segment 2 (layoff) — Segment 2 wins per classification rules, (2) medium-confidence funding signal must use interrogative phrasing, (3) bench capacity is 2 not 5.",
+        "hiring_signal_brief": {
+          "prospect_name": "Conflicted Tech Ltd",
+          "prospect_first_name": "Morgan",
+          "icp_segment": 2,
+          "ai_maturity_score": 1,
+          "signal_1_funding_event": {"confidence": "medium", "amount_usd": 12000000, "round": "Series A", "days_ago": 45},
+          "signal_2_layoff": {"confidence": "high", "headcount_reduction_pct": 20, "days_ago": 30},
+          "signal_3_job_post_velocity": {"confidence": "low", "open_roles": 3, "delta_60d": 1},
+          "conflict_flag": true,
+          "requested_stack": "python",
+          "requested_headcount": 5
+        },
+        "bench_summary": {
+          "as_of": "2026-04-29",
+          "stacks": {
+            "python": {"available_engineers": 2, "seniority_mix": {"junior_0_2_yrs": 1, "mid_2_4_yrs": 1, "senior_4_plus_yrs": 0}}
+          }
+        },
+        "prior_thread": null
+      },
+      "candidate_output": {
+        "subject": "Context: engineering capacity after the restructure",
+        "body": "Hi Morgan,\n\nI saw the announcement that your team contracted by about 20% in the last month. Companies at your stage often need to maintain delivery output while reducing fully-loaded cost.\n\nIf you are scoping Python capacity, our current availability supports up to 2 engineers in that stack on short notice — I want to be honest about that ceiling before we go further. Going to 5 would require a 30-day ramp window as we confirm additional capacity.\n\nIf the December timeline is firm, the cleanest path is a 15-minute scoping call with our delivery lead.\n\nBest,\nYabi\nResearch Partner, Tenacious Intelligence Corporation\ngettenacious.com",
+        "message_type": "cold"
+      },
+      "ground_truth": {
+        "label": "pass",
+        "composite_score": 0.88,
+        "violated_rules": [],
+        "tone_marker_scores": {
+          "direct": 5,
+          "grounded": 4,
+          "honest": 5,
+          "professional": 5,
+          "non_condescending": 5
+        },
+        "rubric_reasoning": "PASS. Correctly applies Segment 2 framing (layoff + cost-restructure, not Segment 1 funding). Correctly uses interrogative/conditional phrasing throughout ('If you are scoping...') because overall signal confidence is mixed (medium funding + high layoff but low hiring velocity). Correctly refuses to commit 5 engineers when bench shows 2 available, naming the ceiling explicitly. No banned phrases. Signal grounded in the layoff event (20% contraction). One ask: 15-minute scoping call. Body word count 115, within cold-outreach limit. 'bench' word absent."
+      },
+      "scoring_rubric": {
+        "banned_phrase_check": true,
+        "signal_grounding_check": true,
+        "bench_match_check": true,
+        "word_count_check": true,
+        "one_ask_check": true,
+        "bench_word_check": true
+      },
+      "created_at": "2026-04-29T10:10:00Z",
+      "metadata": {
+        "seed_probe_id": "P-001",
+        "parameter_variation": {"conflict_flag": true, "funding_confidence": "medium", "layoff_confidence": "high", "python_available": 2, "requested_headcount": 5},
+        "generation_model": "hand-authored",
+        "judge_model": "claude-sonnet-4-6",
+        "judge_scores": {"input_coherence": 5, "ground_truth_verifiability": 5, "rubric_application_clarity": 5},
+        "redaction_applied": true
+      }
+    }
+  ]
+}
