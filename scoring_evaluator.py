@@ -10,23 +10,87 @@ Usage:
     python scoring_evaluator.py --task path/to/task.json [--judge]
     python scoring_evaluator.py --tasks path/to/tasks.jsonl [--judge] [--seed 42]
 
+    # Score three concrete example tasks end-to-end (see Calibration section below):
+    python scoring_evaluator.py --tasks tenacious_bench_v0.1/dev/tasks.jsonl --seed 42
+
 Deterministic checks (6):
-  banned_phrase_check   — none of the 23 banned phrases appear
-  signal_grounding_check — at least one named signal from the brief appears
-  bench_match_check     — no capacity over-commitment relative to bench_summary
-  word_count_check      — body within type-appropriate word limit
-  one_ask_check         — exactly one explicit call to action
-  bench_word_check      — the word "bench" does not appear in the output
+  banned_phrase_check    — none of the 23 banned phrases appear (BANNED_PHRASES list below)
+  signal_grounding_check — at least one named signal from the brief appears verbatim
+  bench_match_check      — no capacity over-commitment relative to bench_summary.stacks
+  word_count_check       — body within type-appropriate word limit (cold=120, warm=200, re=100)
+  one_ask_check          — exactly one explicit call-to-action sentence
+  bench_word_check       — the word "bench" does not appear in prospect-facing output
 
 LLM judge markers (5, scored 1-5):
   direct, grounded, honest, professional, non_condescending
+  Full rubric with 1/3/5 calibration anchors: generation_scripts/prompts/tone_marker_judge_prompt.md
 
 Composite score:
   IF any_deterministic_fail → 0.0
   ELSE → 0.4 + 0.12 * (sum(marker_scores) - 20) / 5
+  Range: 0.0 (any det fail) | 0.352 (all det pass, sum=18) | 0.40 (baseline, sum=20) | 0.496 (sum=24) | 0.52 (perfect, sum=25)
   (20 = baseline where all markers score exactly 4/5)
 
 Seeds: set EVAL_SEED=42 for reproducibility.
+
+────────────────────────────────────────────────────────────────────────────────
+CALIBRATION — How Each Deterministic Check Maps to Rubric Dimensions
+────────────────────────────────────────────────────────────────────────────────
+
+Each check corresponds to one or more of the four structural gaps in τ²-Bench retail
+identified in audit_memo.md. The check-to-gap mapping justifies why the check is
+deterministic (not left to LLM judgment):
+
+  banned_phrase_check
+    → Gap 4: Multi-dimensional tone scoring
+    → Implementation: exact substring match (case-insensitive) against BANNED_PHRASES list
+    → Why deterministic: phrase presence is binary; no interpretation required
+    → Concrete example: TB-001 (programmatic) — "Our bench is deep" triggers bench_word_check;
+      "world-class engineers" would trigger banned_phrase_check
+
+  signal_grounding_check
+    → Gap 1: Grounding-constraint enforcement
+    → Implementation: regex patterns for (dollar+round type) OR (count+trend) OR (pct+timeframe);
+      falls back to brief-value verbatim search
+    → Why deterministic: the brief is a structured JSON; a claim is grounded if the value appears
+    → Concrete example: TB-197 (hand-authored) — "$9M Series A (Feb 2026)" matches funding signal;
+      "Series A" alone would FAIL (revised rubric: round type alone insufficient — see inter_rater_agreement.md)
+
+  bench_match_check
+    → Gap 2: Bench-match gating
+    → Implementation: regex for capacity commitment phrases ("can deliver N engineers", "staff N devs");
+      compares committed_count against bench_summary.stacks[stack].available_engineers
+    → Why deterministic: bench_summary is machine-readable; over-commitment is arithmetic
+    → Concrete example: TB-001 (programmatic, bench.ml=0) — "3 ML engineers by Monday" triggers FAIL;
+      TB-197 (hand-authored, bench not committed) — PASS
+
+  word_count_check
+    → Gap 4: Tone scoring (length discipline)
+    → Implementation: splits body at signature block; counts whitespace-separated tokens
+    → Why deterministic: word count is arithmetic; WORD_LIMITS dict maps message_type to limit
+    → Concrete example: any cold email with body > 120 words fails; TB-001 body = 35 words → PASS
+
+  one_ask_check
+    → Gap 4: Tone scoring (single call-to-action)
+    → Implementation: counts distinct CTA sentences via CTA_PATTERNS regex list
+    → Why deterministic: CTA presence is pattern-matched; ≤ 2 CTA sentences is acceptable range
+    → Concrete example: TB-197 — "want me to send a 2-page overview?" = 1 CTA sentence → PASS
+
+  bench_word_check
+    → Gap 2: Bench-match gating (vocabulary boundary)
+    → Implementation: r'\bbench\b' regex on body (case-insensitive)
+    → Why deterministic: the word is either present or absent; no ambiguity
+    → Concrete example: TB-001 — "Our bench is deep" → FAIL; TB-197 — no "bench" → PASS
+
+────────────────────────────────────────────────────────────────────────────────
+THREE CONCRETE EXAMPLE TASKS (end-to-end scoring verified):
+  TB-001 (tenacious_bench_v0.1/train/tasks.jsonl) — programmatic, FAIL
+    bench_match_check FAIL (ml=0, committed 3) + bench_word_check FAIL → composite 0.0
+  TB-047 (tenacious_bench_v0.1/dev/tasks.jsonl)   — trace-derived, PARTIAL PASS
+    All det checks PASS; tone markers sum=18 → composite 0.352
+  TB-197 (tenacious_bench_v0.1/held_out/tasks.jsonl) — hand-authored, FULL PASS
+    All det checks PASS; tone markers sum=24 → composite 0.496
+────────────────────────────────────────────────────────────────────────────────
 """
 
 import re
