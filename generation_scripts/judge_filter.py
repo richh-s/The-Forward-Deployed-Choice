@@ -13,6 +13,11 @@ Model rotation policy (Li et al., 2025 preference-leakage prevention):
   - Judge model: Qwen3-Next-80B-A3B via OpenRouter (dev-tier)
   - Calibration spot-check (50 tasks, held_out slice only): Claude Sonnet 4.6 on Day 5
 
+Judge prompt template is committed verbatim in:
+  generation_scripts/prompts/judge_quality_filter_prompt.md
+
+Pairwise comparison logic for near-duplicate synthesis tasks: see compare_synthesis_pair().
+
 See model_rotation_log.json for audit trail.
 """
 
@@ -408,6 +413,79 @@ def write_preference_pairs(pairs: list[dict], output_path: Path) -> None:
     log.info("Wrote %d preference pairs to %s", len(pairs), output_path)
 
 
+def _ngram_overlap(text_a: str, text_b: str, n: int = 8) -> float:
+    """Return Jaccard overlap of n-gram sets between two strings."""
+    def ngrams(text: str) -> set:
+        tokens = text.lower().split()
+        return {tuple(tokens[i : i + n]) for i in range(max(0, len(tokens) - n + 1))}
+
+    a_grams, b_grams = ngrams(text_a), ngrams(text_b)
+    if not a_grams or not b_grams:
+        return 0.0
+    return len(a_grams & b_grams) / len(a_grams | b_grams)
+
+
+def compare_synthesis_pair(
+    task_a: dict,
+    task_b: dict,
+    score_a: dict,
+    score_b: dict,
+    ngram_threshold: float = 0.50,
+) -> tuple[dict, dict, str]:
+    """
+    Pairwise deduplication for near-duplicate multi_llm_synthesis tasks.
+
+    Two tasks that share the same seed_scenario_id are compared after pointwise
+    scoring. If they are too similar (n-gram overlap ≥ ngram_threshold), only
+    the higher-scoring one is accepted. If they are sufficiently distinct, both
+    are accepted.
+
+    Returns (accepted_task, rejected_task_or_None, decision_reason).
+    If both are accepted, rejected_task_or_None is None and decision_reason
+    is "both_accepted_distinct".
+
+    Pairwise decisions are logged to model_rotation_log.json under event
+    type "pairwise_dedup".
+    """
+    desc_a = task_a.get("task_description", "")
+    desc_b = task_b.get("task_description", "")
+    overlap = _ngram_overlap(desc_a, desc_b, n=8)
+
+    if overlap < ngram_threshold:
+        # Tasks are distinct enough — accept both
+        _log_model_usage(
+            event="pairwise_dedup",
+            model="offline",
+            task_id=f"{task_a.get('task_id')}+{task_b.get('task_id')}",
+            day=0,
+        )
+        return task_a, None, "both_accepted_distinct"
+
+    # Tasks are near-duplicates — accept the higher-scoring one
+    def _mean_score(s: dict) -> float:
+        scores = s.get("scores", {})
+        vals = [v for v in scores.values() if isinstance(v, (int, float))]
+        return sum(vals) / len(vals) if vals else 0.0
+
+    mean_a = _mean_score(score_a)
+    mean_b = _mean_score(score_b)
+
+    if mean_a >= mean_b:
+        winner, loser = task_a, task_b
+        reason = f"dedup_kept_a (overlap={overlap:.2f}, score_a={mean_a:.2f} >= score_b={mean_b:.2f})"
+    else:
+        winner, loser = task_b, task_a
+        reason = f"dedup_kept_b (overlap={overlap:.2f}, score_b={mean_b:.2f} > score_a={mean_a:.2f})"
+
+    _log_model_usage(
+        event="pairwise_dedup",
+        model="offline",
+        task_id=f"{task_a.get('task_id')}+{task_b.get('task_id')}",
+        day=0,
+    )
+    return winner, loser, reason
+
+
 def run_filter_pipeline(
     input_path: Path,
     output_dir: Path,
@@ -433,6 +511,34 @@ def run_filter_pipeline(
     log.info("Loaded %d tasks from %s", len(tasks), input_path)
 
     accepted, rejected, records = filter_tasks(tasks, use_live_judge=use_live_judge, day=day)
+
+    # Pairwise dedup: for multi_llm_synthesis tasks sharing the same seed_scenario_id,
+    # compare near-duplicates and drop the lower-scoring one if overlap ≥ 0.50.
+    record_map = {r["task_id"]: r for r in records}
+    synthesis_by_seed: dict[str, list[dict]] = {}
+    for t in accepted:
+        if t.get("metadata", {}).get("source_mode") == "multi_llm_synthesis":
+            seed_id = t.get("metadata", {}).get("seed_scenario_id", t["task_id"])
+            synthesis_by_seed.setdefault(seed_id, []).append(t)
+
+    pairwise_rejected: set[str] = set()
+    for seed_id, group in synthesis_by_seed.items():
+        for i in range(len(group)):
+            for j in range(i + 1, len(group)):
+                ta, tb = group[i], group[j]
+                if ta["task_id"] in pairwise_rejected or tb["task_id"] in pairwise_rejected:
+                    continue
+                sa = record_map.get(ta["task_id"], {})
+                sb = record_map.get(tb["task_id"], {})
+                winner, loser, reason = compare_synthesis_pair(ta, tb, sa, sb)
+                if loser is not None:
+                    pairwise_rejected.add(loser["task_id"])
+                    log.info("Pairwise dedup: dropped %s (%s)", loser["task_id"], reason)
+
+    if pairwise_rejected:
+        pre_count = len(accepted)
+        accepted = [t for t in accepted if t["task_id"] not in pairwise_rejected]
+        log.info("Pairwise dedup removed %d near-duplicate synthesis tasks", pre_count - len(accepted))
 
     output_dir.mkdir(parents=True, exist_ok=True)
     accepted_path = output_dir / f"accepted_{input_path.stem}.jsonl"

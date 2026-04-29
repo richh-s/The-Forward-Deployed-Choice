@@ -346,16 +346,38 @@ def call_llm_judge(task: dict, model: str = "qwen3-next-80b") -> dict:
         candidate = task.get("candidate_output", {})
         hiring_brief = task.get("input", {}).get("hiring_signal_brief", {})
 
+        # Full rubric with calibration anchors committed in:
+        # generation_scripts/prompts/tone_marker_judge_prompt.md
         judge_prompt = f"""You are a Tenacious Intelligence Corporation brand evaluator. Score the following outreach email draft on five tone markers. Return ONLY valid JSON with keys: direct, grounded, honest, professional, non_condescending. Each score is an integer 1-5.
 
-Scoring rubric:
-- direct (5): Clear, brief, actionable. Subject states intent. Body ≤ word limit. One ask. No filler.
-- grounded (5): Every claim is supported by a named signal (specific amount, date, role count, named peer). Confidence-aware phrasing matches signal confidence.
-- honest (5): Names what the brief does not show. Refuses to commit bench/pricing the policy does not allow. No hallucinated signals.
-- professional (5): No banned phrases. No "bench" externally. Language calibrated to a CTO or founder reader.
-- non_condescending (5): Frames any gap as a research finding or question. Does not imply the prospect is failing or behind.
+SCORING RUBRIC WITH 1/3/5 CALIBRATION ANCHORS:
 
-Score ≤2 means the marker fails (draft would be regenerated in production).
+direct (1–5): Is the email clear, brief, and actionable?
+  5 = Subject states intent; body ≤ word limit; single clear ask; zero filler phrases
+  3 = Mostly clear but one filler sentence or a second implicit ask dilutes focus
+  1 = Multiple filler phrases; subject is vague ("Reaching out…"); no clear ask at all
+
+grounded (1–5): Are all claims supported by named signals (specific amount, date, role count)?
+  5 = Every factual claim maps to a field in hiring_signal_brief; confidence-aware phrasing matches signal confidence
+  3 = Most claims grounded but one uses "approximately" without confidence flag
+  1 = Multiple claims not traceable to any supplied signal; numbers fabricated or contradict brief
+
+honest (1–5): Does the email avoid hallucinated signals and name what the brief does not show?
+  5 = Refuses to commit engineers not in bench; explicitly names absent data; no unconfirmed claims
+  3 = One claim overstates certainty but does not fabricate new data; no explicit bench over-commitment
+  1 = Commits capacity that bench_summary shows as 0; asserts funding that contradicts brief
+
+professional (1–5): Is the language calibrated to a CTO/founder reader with no banned phrases?
+  5 = No banned phrases; "bench" not used externally; signals discussed at peer level; no buzzwords
+  3 = One borderline banned phrase used in technical context; tone appropriate overall
+  1 = Two or more banned phrases used; or language is salesy/pushy rather than peer-level
+
+non_condescending (1–5): Does the email frame any gap as a research finding, not a deficiency?
+  5 = Gap framed as hypothesis: "we noticed X, which often precedes Y — curious if that's the case"
+  3 = Gap stated as fact but without explicit judgment: factual but could read as critical
+  1 = Gap framed as deficiency: "you're falling behind on AI adoption"; or uses condescending framing
+
+Score ≤ 2 means the marker fails (draft would be rejected/regenerated in production).
 
 HIRING SIGNAL BRIEF:
 {json.dumps(hiring_brief, indent=2)}

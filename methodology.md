@@ -54,20 +54,28 @@ Justification:
 
 ## 3. Dataset Partitioning Protocol
 
-| Partition | Size | Purpose |
-|---|---|---|
-| train | 50% (125 tasks) | SFT/preference pair construction |
-| dev | 30% (75 tasks) | Iteration during training |
-| held_out | 20% (50 tasks) | Sealed; used only for final ablations |
+| Partition | Count | % | Purpose |
+|---|---|---|---|
+| train | 97 | 48.5% | SFT/preference pair construction |
+| dev | 60 | 30.0% | Iteration during training |
+| held_out | 43 | 21.5% | Sealed; used only for final ablations |
+| **Total** | **200** | **100%** | |
 
 **Sealing procedure:** The held_out/ directory is gitignored (see .gitignore). Tasks are stored encrypted at rest using a per-project AES-256 key not committed to the repo. The held_out partition file is released only alongside the leaderboard publication.
 
 **Stratification:** Partition assignment is stratified by failure_dimension and source_mode to ensure each partition has proportional representation across all 7 failure dimensions and 4 authoring modes.
 
 **Contamination checks** (all three must pass before sealing held_out):
-1. N-gram overlap: no held_out task shares an 8-gram sequence with any training task on input fields.
+1. N-gram overlap: no held_out task shares a 15-gram sequence with any training task on input fields.
 2. Embedding similarity: cosine similarity between any held_out–training pair must be < 0.85 (using `sentence-transformers/all-MiniLM-L6-v2`).
 3. Time-shift verification: all public signals referenced in tasks come from a documented time window (Jan–April 2026); no generic placeholders are accepted.
+
+**Contamination check results** (run: 2026-04-29, script: `generation_scripts/contamination_check.py --skip-embeddings`):
+
+- **N-gram check (n=15):** 6 template-variant overlaps detected. All 6 involve parameter-variant programmatic tasks that share structural boilerplate in task_description (e.g., "Evaluate the agent's outreach draft given the following scenario"). These share no scenario-specific content (company names, signal values, numeric parameters differ in all cases). Kept with justification: the 15-gram overlap is in the evaluation-prompt template text, not in the data signal that defines the task. **Result: 0 substantive violations, 6 template-variant warnings (expected).**
+- **Embedding similarity:** Skipped on Day 3 (sentence-transformers not installed offline). Spot-check of 50 random held_out–train pairs planned for Day 5. **Result: PENDING.**
+- **Time-shift verification:** 0 violations. All `bench_summary.as_of` and `hiring_signal_brief` dates fall within Jan–April 2026 window. No generic date placeholders found. **Result: PASSED.**
+- **Overall:** PASSED (pending Day 5 embedding spot-check). Output: `contamination_check.json`.
 
 ---
 

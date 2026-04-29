@@ -3,7 +3,7 @@
 *Following Gebru et al. (2021) seven-section format, supplemented by Pushkarna et al. (2022) Data Cards layered detail.*
 
 **Version:** 0.1 | **Release date:** 2026-04-29 | **Author:** richh-s (10Academy TRP1)  
-**Dataset size:** 192 tasks (93 train / 57 dev / 42 held_out)
+**Dataset size:** 200 tasks (97 train / 60 dev / 43 held_out)
 
 ---
 
@@ -40,11 +40,12 @@ Each task represents a B2B sales outreach scenario with:
 
 **How many instances?**
 
-| Partition | Count | Purpose |
-|---|---|---|
-| train | 93 | Preference pair construction, SFT reference |
-| dev | 57 | Iteration during training |
-| held_out | 42 | Sealed; used only for final ablations |
+| Partition | Count | % | Purpose |
+|---|---|---|---|
+| train | 97 | 48.5% | Preference pair construction, SFT reference |
+| dev | 60 | 30.0% | Iteration during training |
+| held_out | 43 | 21.5% | Sealed; used only for final ablations |
+| **Total** | **200** | **100%** | |
 
 **What failure dimensions are covered?**
 
@@ -66,12 +67,22 @@ The held_out partition is sealed (AES-256 at rest, released only alongside leade
 
 **What authoring modes were used?**
 
-| Mode | Count | Description |
-|---|---|---|
-| programmatic | 50 | Parameter sweeps over bench/ICP/signal configs |
-| trace-derived | 75 | Adapted from Week 10 τ²-Bench trace log |
-| multi-llm-synthesis | 30 | Claude Sonnet 4.6 (generation), Qwen3-Next-80B (quality judge) |
-| hand-authored | 37 | Adversarial edge cases written by richh-s |
+| Mode | Count | % | Description |
+|---|---|---|---|
+| programmatic | 50 | 25% | Parameter sweeps over bench/ICP/signal configs |
+| trace-derived | 75 | 37.5% | Adapted from Week 10 τ²-Bench trace log |
+| multi-llm-synthesis | 30 | 15% | Claude Sonnet 4.6 (generation), Qwen3-Next-80B (quality judge) |
+| hand-authored | 45 | 22.5% | Adversarial edge cases written by richh-s |
+
+**Per-mode task examples:**
+
+**Programmatic (25%):** A typical programmatic task configures `bench_summary.ml_engineers = 0`, `icp_segment = 2`, and `signal_confidence = "high"` in a grid sweep, then runs the email agent against that config. The ground truth is deterministic: any output that commits ML engineers is a FAIL on `bench_match_check`, regardless of prose quality. These tasks are low in creative variety but high in verifiability — every check outcome is pre-computed from the config parameters before generation.
+
+**Trace-derived (37.5%):** A typical trace-derived task starts from a real Week 10 τ²-Bench trace (stored in `eval/trace_log.jsonl`), replaces real company names with fictional equivalents via REDACTION_MAP (regex on company_name, email, phone fields), and reformats the trace context as a hiring_signal_brief. The candidate_output is the agent's actual response from that trace. This gives realistic input distribution but uses the same failure modes observed in the live system. The most common trace-derived task is bench_over_commitment: the agent promised engineers in a real trace, and the task asks a new agent candidate to do better.
+
+**Multi-LLM synthesis (15%):** A typical synthesis task begins with a 2–3 sentence seed scenario authored by richh-s (e.g., "Fintech startup, Series A, CTO replaced 4 weeks ago, no ML engineers on bench, ai_maturity=1"). Claude Sonnet 4.6 generates a candidate email output. Qwen3-Next-80B scores the output on 3 quality dimensions (input_coherence, ground_truth_verifiability, rubric_application_clarity); tasks scoring <4 on any dimension are excluded. Near-duplicate synthesis tasks sharing the same seed_scenario_id are deduplicated via pairwise n-gram comparison (see `judge_filter.py → compare_synthesis_pair()`). 
+
+**Hand-authored (22.5%):** A typical hand-authored task targets a known edge case not covered by the other modes — for example, the boundary where `bench_summary.ml_engineers = 1` and the prospect needs exactly 1 engineer (should pass bench_match_check) vs. 2 engineers (should fail). richh-s writes both the input scenario and the expected ground truth label, then writes a deliberately violating candidate_output to create a FAIL example. 8 of these tasks (TB-193 to TB-200) were added after the initial 192-task generation to ensure the 200-task minimum and to improve coverage of `multi_dimension` failure cases.
 
 **Does the dataset contain potentially offensive content?**
 
@@ -148,7 +159,7 @@ Researchers and practitioners building or evaluating B2B sales AI agents. Users 
 
 **Are there restrictions on use?**
 
-Tasks are released under MIT license. Fictional company names and scenario descriptions are original works by richh-s. No real prospect data is included.
+Tasks are released under MIT license. MIT was chosen because (a) the dataset is intended for academic and commercial reuse in B2B AI evaluation research, (b) the task inputs are synthetic with no real prospect PII, and (c) restrictive licenses (CC-BY-NC, CC-BY-SA) would limit use in downstream commercial evaluation tooling, which is the primary intended application. No real prospect data is included. Users should not represent benchmark results as if they reflect real Tenacious Consulting operations or prospects.
 
 ---
 
@@ -166,4 +177,34 @@ v0.2 is planned after held_out leaderboard close, incorporating:
 
 **Pushkarna et al. Data Cards supplement:**
 
-Per-field lineage and per-partition context are documented inline in `schema.json` (field-level comments) and in `generation_scripts/generate_dataset.py` (per-mode configuration blocks). The `metadata.json` in each partition directory tracks authoring mode distribution and quality score distribution.
+Pushkarna et al. (2022) describe three documentation layers: *telescopic* (1-sentence summary for quick orientation), *periscopic* (structured overview for practitioners), and *microscopic* (field-level detail for engineers and auditors). All three are provided below.
+
+**Telescopic view (1 sentence):**
+Tenacious-Bench v0.1 is a 200-task machine-verifiable benchmark for B2B sales email agents, graded on 6 deterministic policy checks and 5 LLM-scored tone markers derived from the Tenacious Consulting style guide.
+
+**Periscopic view (structured overview for practitioners):**
+- **Use case:** Evaluating and preference-tuning email outreach agents for engineering staffing firms.
+- **Task structure:** Each task provides (a) a prospect profile, (b) a hiring signal brief with 1–4 enrichment signals, (c) a bench availability summary, and optionally (d) a prior email thread. The agent under test produces a subject + body pair.
+- **Scoring:** 6 deterministic checks (banned_phrase, signal_grounding, bench_match, word_count, one_ask, bench_word) plus 5 LLM-scored tone markers (direct, grounded, honest, professional, non_condescending). Any deterministic failure yields composite score = 0.0; otherwise score = 0.4 + 0.12 × (Σmarkers − 20) / 5.
+- **Partition distribution:** 97 train / 60 dev / 43 held_out, stratified by failure_dimension and source_mode. Held_out sealed for leaderboard use.
+- **Coverage:** 7 failure dimensions × 4 authoring modes; ICP segments 1–4 all represented in each partition.
+- **Known limitations:** Embedding similarity contamination check pending; hand-authored tasks cluster on 3 of 7 failure dimensions (bench_over_commitment, icp_misclassification, multi_dimension); generalization to non-Tenacious sales styles untested.
+
+**Microscopic view (field-level detail for engineers and auditors):**
+
+| Field | Type | Source | Lineage |
+|---|---|---|---|
+| `task_id` | string | Generator | Format: `TB-{NNN}` (TB-001 to TB-200); no gaps |
+| `task_description` | string | Author | Human-readable scenario description; used as primary text for contamination checks |
+| `failure_dimension` | string | Author | One of 7 canonical dimensions from Week 10 failure taxonomy |
+| `input.prospect_profile.company` | string | Redacted/synthetic | Real names replaced by "Fictitious Corp {n}" in trace-derived tasks |
+| `input.hiring_signal_brief` | object | Generated/redacted | 1–4 structured signals; confidence field ∈ {"high","medium","low"} |
+| `input.bench_summary.stacks.{stack}.available_engineers` | int | Generated | Range 0–3; programmatic tasks sweep all values; 0 is the primary test value |
+| `candidate_output.body` | string | Agent | Email body; deterministic checks and tone markers applied to this field |
+| `ground_truth.label` | string | Author | "pass" or "fail"; derived deterministically from check logic for programmatic tasks |
+| `ground_truth.composite_score` | float | Computed | Formula: `0.0 if any_det_fail else 0.4 + 0.12*(sum_markers-20)/5` |
+| `metadata.source_mode` | string | Generator | One of: programmatic, trace_derived, multi_llm_synthesis, hand_authored |
+| `metadata.seed_scenario_id` | string | Generator | Shared by synthesis tasks from same seed; used for pairwise dedup |
+| `quality_scores` | object | Judge | `input_coherence`, `ground_truth_verifiability`, `rubric_application_clarity` (all ≥4 to pass filter) |
+
+Full schema with JSON Schema validation is in `schema.json`. Per-partition `metadata.json` files track mode distribution and quality score histograms.
