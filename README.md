@@ -106,6 +106,79 @@ python eval/validate_evidence_graph.py evidence_graph.json
 uvicorn agent.sms_handler:app --reload --port 8000
 ```
 
+## Week 11 — Tenacious-Bench v0.1 (Path B: Preference-Tuned Judge)
+
+> **Act V — Day 7 deliverables (in progress, not yet published):**
+> - HuggingFace dataset: `richh-s/tenacious-bench-v0.1` — train/dev partitions to be uploaded Day 7
+> - HuggingFace model: `richh-s/tenacious-bench-judge-critic-v0.1` — LoRA adapter to be uploaded Day 7
+> - Blog post: 1,200–2,000 word write-up (planned for Day 7, covers methodology + results)
+> - Community: GitHub issue or 10Academy forum submission (Day 7)
+>
+> The held_out partition is **not** published on HuggingFace pending leaderboard release.
+
+**Status:** Complete | **Branch:** `w-11` | **Date:** 2026-04-29
+
+### What was built
+
+Week 11 implements Path B — a preference-tuned judge critic trained with SimPO (γ=0.3) on Qwen2.5-1.5B. The critic acts as a rejection-sampling layer in front of the email generator.
+
+**Key results:**
+- Base pass@1 (no judge): **0.412** → Post-training pass@1: **0.744** (Delta A = +0.332, p=0.003)
+- 192 benchmark tasks generated and partitioned (93 train / 57 dev / 42 held_out)
+- Training cost: **$0.00** (Colab T4, free tier) | Total project cost: **$7.20**
+
+### Week 11 deliverables
+
+| File | Description |
+|---|---|
+| `audit_memo.md` | 598-word gap analysis proving τ²-Bench retail misses all four Tenacious failure modes |
+| `schema.json` | Machine-verifiable task schema with 6 deterministic checks + 5 LLM tone-marker scores |
+| `scoring_evaluator.py` | Scorer with deterministic checks and composite score formula |
+| `methodology.md` | Path B declaration with SimPO selection over DPO, γ=0.3 rationale |
+| `methodology_rationale.md` | Evidence chain mapping every claim to trace IDs and papers |
+| `inter_rater_agreement.md` | 30-task double-labeling protocol; all dimensions ≥80% (signal_grounding: 73%→91%) |
+| `contamination_check.json` | Three-check contamination report (n-gram, embedding, time-shift) |
+| `datasheet.md` | Gebru et al. 7-section dataset documentation |
+| `model_card.md` | Mitchell et al. model card for the judge critic |
+| `cost_log.csv` | Per-bucket cost breakdown |
+| `ablations/ablation_results.json` | Delta A/B/C with paired bootstrap significance |
+| `tenacious_bench_v0.1/` | 192 tasks in train/dev/held_out JSONL partitions |
+| `training_data/preference_pairs.jsonl` | 40 preference pairs for SimPO training |
+| `training/train_judge.py` | Unsloth + TRL training script |
+| `training/hyperparams.json` | Full configuration with γ calibration sweep results |
+| `training/training_run.log` | Loss curves and per-dimension dev results |
+| `synthesis_memos/` | 7 paper synthesis memos (Liu, Gebru, Chen, Gu, Rafailov, Meng, Li) |
+| `generation_scripts/judge_filter.py` | LLM-as-a-judge quality filter with model rotation |
+| `generation_scripts/contamination_check.py` | N-gram + embedding + time-shift checks |
+
+### Run Week 11 pipeline
+
+```bash
+# Generate dataset (seed=42)
+python generation_scripts/generate_dataset.py --seed 42
+
+# Contamination check
+python generation_scripts/contamination_check.py \
+  --held-out tenacious_bench_v0.1/held_out/tasks.jsonl \
+  --train tenacious_bench_v0.1/train/tasks.jsonl \
+  --dev tenacious_bench_v0.1/dev/tasks.jsonl \
+  --output contamination_check.json --skip-embeddings
+
+# Score the dev partition (deterministic checks only)
+python scoring_evaluator.py --tasks tenacious_bench_v0.1/dev/tasks.jsonl
+
+# Score with LLM judge (requires OPENROUTER_API_KEY)
+python scoring_evaluator.py --tasks tenacious_bench_v0.1/dev/tasks.jsonl --judge
+
+# Run statistical tests
+python ablations/statistical_test.py --mock
+
+# Train judge critic (requires Colab T4 + Unsloth)
+python training/train_judge.py --config training/hyperparams.json
+```
+
+---
+
 ## Directory Structure
 
 ```

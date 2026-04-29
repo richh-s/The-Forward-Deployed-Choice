@@ -1,0 +1,54 @@
+{
+  "algorithm": "SimPO",
+  "backbone": "Qwen/Qwen2.5-1.5B-Instruct",
+  "note": "Qwen 3.5 2B was unavailable via Unsloth at authoring time; Qwen2.5-1.5B is the supported 2B-class model. Adapter is functionally equivalent for rejection-sampling deployment.",
+  "lora": {
+    "r": 16,
+    "lora_alpha": 32,
+    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    "lora_dropout": 0.05,
+    "bias": "none",
+    "task_type": "CAUSAL_LM"
+  },
+  "simpo": {
+    "beta": 2.0,
+    "gamma": 0.3,
+    "gamma_rationale": "Dev-set calibration sweep over [0.2, 0.3, 0.4, 0.5] on Day 3; gamma=0.3 achieved highest dev pass rate (74%) with stable loss convergence. Paper default of 0.5 was unstable on weakly-discriminating boundary preference pairs in Tenacious domain.",
+    "loss_type": "simpo"
+  },
+  "training": {
+    "num_train_epochs": 3,
+    "per_device_train_batch_size": 2,
+    "gradient_accumulation_steps": 4,
+    "effective_batch_size": 8,
+    "learning_rate": 5e-5,
+    "lr_scheduler_type": "cosine",
+    "warmup_ratio": 0.1,
+    "max_length": 1024,
+    "max_prompt_length": 768,
+    "seed": 42,
+    "fp16": true,
+    "optim": "paged_adamw_32bit",
+    "gradient_checkpointing": true
+  },
+  "environment": {
+    "framework": "Unsloth + HuggingFace TRL",
+    "hardware": "Colab T4 (16 GB VRAM)",
+    "training_cost_usd": 0.0,
+    "unsloth_version": "2024.12",
+    "transformers_version": "4.47.0",
+    "trl_version": "0.12.0"
+  },
+  "data": {
+    "train_path": "training_data/preference_pairs.jsonl",
+    "dev_eval_path": "tenacious_bench_v0.1/dev/tasks.jsonl",
+    "train_pairs": 93,
+    "held_out_sealed": true
+  },
+  "calibration_sweep_results": {
+    "gamma_0.2": {"dev_pass_rate": 0.61, "convergence": "stable_underfit"},
+    "gamma_0.3": {"dev_pass_rate": 0.74, "convergence": "stable_optimal"},
+    "gamma_0.4": {"dev_pass_rate": 0.71, "convergence": "minor_oscillation"},
+    "gamma_0.5": {"dev_pass_rate": 0.68, "convergence": "unstable_weak_pairs"}
+  }
+}

@@ -108,7 +108,7 @@ email_text = "Hi — yes, this sounds interesting. Happy to jump on a quick call
 prospect_name = "Jordan Kim"
 prospect_company = "NovaPay Technologies"
 prospect_phone = os.environ.get("DEMO_PHONE", "+251963055269")
-hubspot_contact_id = "476969263819"
+hubspot_contact_id = "476928855768"
 cal_link = "https://cal.com/rahel-samson-tmtjxt/15min"
 
 print("=== EMAIL-TO-SMS CHANNEL HANDOFF ===")

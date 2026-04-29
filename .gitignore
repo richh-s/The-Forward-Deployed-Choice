@@ -17,3 +17,13 @@ node_modules/
 temp_auto_push.bat
 temp_interactive_push.bat
 .gitignore
+
+# Week 11 — held-out partition must never be committed unencrypted
+tenacious_bench_v0.1/held_out/
+# Training scripts must not accidentally read held_out during train
+training_data/held_out_ref/
+# Local model weights (publish only the LoRA adapter to HuggingFace Hub)
+training/model_weights/
+training/merged_model/
+# Cost log may contain billing details
+cost_log_private.csv
