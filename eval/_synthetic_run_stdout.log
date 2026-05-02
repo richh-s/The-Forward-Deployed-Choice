@@ -1,0 +1,70 @@
+=== SYNTHETIC TRACE RUN — 20 prospect(s) ===
+  LIVE_MODE: false (must be 'false' for sink routing)
+  trace log: /Users/aman/Desktop/projects/10academy/The-Forward-Deployed-Choice/eval/trace_log_outreach.jsonl
+
+[01/20] SynthCo_01_AcornPay (segment1_high_signal_seriesA) ...
+     status=SENT attempts=1 roast=NO subj="Request: 15 min on scaling AcornPay's AI team" words=102 latency_ms=14595 cost=$0.0414
+[02/20] SynthCo_02_LedgerLake (segment1_high_signal_seriesB_data) ...
+     status=SENT attempts=1 roast=NO subj="Request: 15 min on scaling LedgerLake's AI team" words=105 latency_ms=12922 cost=$0.0414
+[03/20] SynthCo_03_QuietBird (segment1_weak_signal) ...
+     status=SENT attempts=1 roast=NO subj='Request: 15 minutes on engineering capacity' words=108 latency_ms=13631 cost=$0.0411
+[04/20] SynthCo_04_RoughTide (segment1_funded_and_layoff_conflict) ...
+     status=SENT attempts=1 roast=NO subj="Request: 15 min on RoughTide's AI hiring pace" words=105 latency_ms=14497 cost=$0.0412
+[05/20] SynthCo_05_FernPay (segment1_ai_maturity_zero) ...
+     status=SENT attempts=2 roast=NO subj="Request: 15 minutes on FernPay's engineering scale" words=100 latency_ms=30936 cost=$0.0409
+[06/20] SynthCo_06_PivotFi (segment2_layoff_still_hiring) ...
+     status=SENT attempts=1 roast=NO subj='Context: engineering delivery post-restructure' words=97 latency_ms=13150 cost=$0.0411
+[07/20] SynthCo_07_DriftLogic (segment2_layoff_no_hires) ...
+     status=SENT attempts=1 roast=NO subj='Context: engineering delivery after your restructure' words=90 latency_ms=12444 cost=$0.0406
+[08/20] SynthCo_08_CinderRail (segment2_post_layoff_with_ai_angle) ...
+     status=SENT attempts=1 roast=NO subj='Context: platform delivery through the restructure' words=80 latency_ms=14533 cost=$0.0408
+[09/20] SynthCo_09_OakChain (segment3_new_cto_only) ...
+     status=SENT attempts=1 roast=NO subj='Question: vendor mix in your first 90 days' words=102 latency_ms=11986 cost=$0.0408
+[10/20] SynthCo_10_HarborStack (segment3_new_vp_with_ai_hiring) ...
+     status=SENT attempts=1 roast=NO subj='Request: 15 minutes on your first 90 days at HarborStack' words=113 latency_ms=14406 cost=$0.0413
+[11/20] SynthCo_11_PalmFinance (segment4_mlops_gap) ...
+     status=SENT attempts=1 roast=NO subj='Question: MLOps capacity at PalmFinance' words=97 latency_ms=12071 cost=$0.0419
+[12/20] SynthCo_12_NovaWorks (segment4_competitor_head_of_ai) ...
+     status=SENT attempts=1 roast=NO subj='Question: NovaWorks AI delivery capacity' words=106 latency_ms=11859 cost=$0.0413
+[13/20] SynthCo_13_LowSignal (segment4_INVALID_low_maturity_must_be_blocked) ...
+     status=SENT attempts=2 roast=NO subj='Question: engineering velocity at LowSignal' words=105 latency_ms=23198 cost=$0.0411
+[14/20] SynthCo_14_BigAsk (bench_overcommit_15_engineers_request) ...
+     status=SENT attempts=1 roast=NO subj='Request: 15 minutes on your AI hiring velocity' words=94 latency_ms=11776 cost=$0.0408
+[15/20] SynthCo_15_RailStone (bench_stack_mismatch_go_infra) ...
+     status=SENT attempts=1 roast=NO subj="Request: 15 minutes on RailStone's engineering growth" words=107 latency_ms=12564 cost=$0.0410
+[16/20] SynthCo_16_BackOnRadar (reengagement_new_layoff_signal) ...
+     status=ESCALATED attempts=1 roast=SKIPPED subj='Context: BackOnRadar delivery capacity' words=91 latency_ms=10639 cost=$0.0408
+[17/20] SynthCo_17_WarmThread (reengagement_after_warm_reply) ...
+     status=SENT attempts=1 roast=NO subj='Context: fintech ML hiring data, Q2 2026' words=85 latency_ms=12772 cost=$0.0408
+[18/20] SynthCo_18_GapTrap (tone_stress_condescending_temptation) ...
+     status=SENT attempts=1 roast=NO subj='Context: AI delivery gap in fintech' words=104 latency_ms=11838 cost=$0.0413
+[19/20] SynthCo_19_FaintHum (tone_stress_overconfidence_temptation) ...
+     status=SENT attempts=2 roast=NO subj="Request: 15 minutes on FaintHum's platform engineering" words=105 latency_ms=22053 cost=$0.0411
+[20/20] SynthCo_20_CleanShot (tone_stress_clean_first_pass_expected) ...
+     status=SENT attempts=1 roast=NO subj="Request: 15 min on scaling CleanShot's AI team" words=98 latency_ms=12484 cost=$0.0414
+
+=== SYNTHETIC TRACE RUN SUMMARY ===
+Total traces: 20
+Passed on first attempt: 16
+Required regeneration: 3
+Escalated to human: 1
+Roast test failures: 0
+Errored: 0
+Average attempts: 1.15
+Average latency: 14717ms
+Average cost: $0.0411
+Pass rate: 95.0%
+
+Gate tests:
+  - segment_4_blocked_at_maturity_1: PASS
+  - bench_overcommit_rerouted: PASS
+  - weak_signal_used_interrogative: PASS
+  - reengagement_added_new_content: PASS
+
+wrote /Users/aman/Desktop/projects/10academy/The-Forward-Deployed-Choice/eval/synthetic_run_summary.json
+
+=== LATENCY PERCENTILES (by channel) ===
+wrote /Users/aman/Desktop/projects/10academy/The-Forward-Deployed-Choice/eval/latency_percentiles_outreach.json
+  rows_used=20 rows_skipped=0
+  overall p50=12847.0ms p95=23584.9ms (n=20)
+  email: p50=12847.0ms p95=23584.9ms (n=20)

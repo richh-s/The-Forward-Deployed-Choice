@@ -8,6 +8,13 @@ SENDER_NAME  = os.environ.get("SENDER_NAME",  "Alex Chen")
 SENDER_TITLE = os.environ.get("SENDER_TITLE", "Senior Engagement Manager")
 SENDER_COMPANY = os.environ.get("SENDER_COMPANY", "Tenacious Intelligence Corporation")
 
+# Kill-switch: outbound only goes to real prospects when LIVE_MODE is explicitly
+# set to "true". Default is staff sink so dry-runs and CI never email a real
+# inbox. STAFF_SINK_EMAIL must be a real Tenacious-owned address that the team
+# monitors (set in .env, not hard-coded).
+LIVE_MODE = os.environ.get("LIVE_MODE", "false").strip().lower() == "true"
+STAFF_SINK_EMAIL = os.environ.get("STAFF_SINK_EMAIL", "outreach-sink@gettenacious.com")
+
 
 def _fill_placeholders(body: str) -> str:
     """Replace any LLM-generated bracket placeholders with real values."""
@@ -55,16 +62,32 @@ def send_outreach(
     )
     clean_body = _fill_placeholders(email_content["body"])
 
+    intended_to = prospect["email"]
+    actual_to = intended_to if LIVE_MODE else STAFF_SINK_EMAIL
+    routing_mode = "live" if LIVE_MODE else "sink"
+    if not LIVE_MODE:
+        clean_body = (
+            f"[KILL-SWITCH ACTIVE: LIVE_MODE=false. Original recipient: {intended_to}]\n\n"
+            + clean_body
+        )
+
+    trace.update(metadata={
+        "routing_mode": routing_mode,
+        "intended_to":  intended_to,
+        "actual_to":    actual_to,
+    })
+
     start = time.time()
     try:
         result = resend.Emails.send({
             "from":    "onboarding@resend.dev",
-            "to":      prospect["email"],
+            "to":      actual_to,
             "subject": email_content["subject"],
             "html":    clean_body,
             "tags": [
                 {"name": "variant", "value": email_content.get("variant_tag", "")},
-                {"name": "segment", "value": "recently_funded"}
+                {"name": "segment", "value": "recently_funded"},
+                {"name": "routing_mode", "value": routing_mode},
             ]
         })
     except Exception as e:
@@ -89,5 +112,8 @@ def send_outreach(
         "email_id":  result["id"],
         "trace_id":  trace.id,
         "cost_usd":  cost_usd,
-        "latency_ms": latency_ms
+        "latency_ms": latency_ms,
+        "routing_mode": routing_mode,
+        "intended_to":  intended_to,
+        "actual_to":    actual_to,
     }

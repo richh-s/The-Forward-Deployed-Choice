@@ -143,7 +143,7 @@ SUBJECT_CHAR_LIMIT = 60
 
 # Keywords that indicate an explicit call-to-action
 CTA_PATTERNS = [
-    r"\b15[ -]minute\b",
+    r"\b\d+[ -]?minutes?\b",
     r"\b15min\b",
     r"\bscoping call\b",
     r"\bdiscovery call\b",
@@ -155,9 +155,10 @@ CTA_PATTERNS = [
     r"\bwant me to send\b",
     r"\bno follow-?up\b",
     r"\bignore this\b",
-    r"\b30[ -]minute\b",
     r"\bschedule\b",
     r"\bhappy to introduce\b",
+    r"\bworth a quick call\b",
+    r"\bopen to\b.*\bcall\b",
 ]
 
 # Signal grounding: patterns that indicate a specific, named signal

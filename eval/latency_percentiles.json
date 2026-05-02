@@ -1,0 +1,14 @@
+{
+  "trace_log": "eval/trace_log.jsonl",
+  "n_rows_used": 150,
+  "n_rows_skipped": 0,
+  "overall": {
+    "n": 150,
+    "p50_ms": 105952.1,
+    "p95_ms": 551649.11,
+    "min_ms": 39514.91,
+    "max_ms": 1192220.72,
+    "mean_ms": 156269.5
+  },
+  "by_channel": {}
+}
