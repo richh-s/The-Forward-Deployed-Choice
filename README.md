@@ -40,6 +40,14 @@ Public Data Sources
     Langfuse traces → evidence_graph.json
 ```
 
+## Data Handling / Kill-Switch
+
+All outbound email routes to a staff sink by default.
+To enable live sending: set `LIVE_MODE=true` in environment.
+Default is unset (sink mode). This is intentional per the
+program data-handling policy. Never set `LIVE_MODE=true`
+during the challenge week without program staff approval.
+
 ## Kill-Switch Configuration
 
 > **IMPORTANT**: By default all outbound routes to a staff sink, not real Tenacious prospects.
@@ -298,3 +306,39 @@ A successor engineer picking up this repo should be aware of the following:
 - **Cal.com booking link is referenced in SMS replies but not auto-generated.** Next step: call the Cal.com Booking Links API to generate a personalised scheduling URL and embed it in the SMS body.
 - **HubSpot activity logging** writes `meeting_booked` / `meeting_time` on booking events but does not log email open, click, or SMS reply events as CRM timeline activities. Add `POST /crm/v3/objects/engagements` calls for full activity history.
 - **Delta A is measured at the probe level, not the general-task level.** The τ²-Bench general-task t-test shows p = 0.5 (not significant) because retail tasks rarely trigger bench_over_commitment. The primary Delta A is a Fisher's exact test on P-009 trigger rates: baseline 100% → mechanism_v1 0%, **p = 5.4×10⁻⁶**. See `mechanism/delta_a_test.json`.
+
+
+---
+
+## Published Artifacts
+
+| Artifact | URL | Status |
+|---|---|---|
+| HuggingFace Dataset (tenacious-bench-v0.1) | https://huggingface.co/datasets/rich6/tenacious-bench-v0.1 | ✅ live |
+| HuggingFace Model (LoRA adapter) | https://huggingface.co/rich6/tenacious-tone-judge-lora | ✅ live |
+| Technical Blog Post | https://medium.com/p/aeb5a158192a | ✅ live |
+| Community Engagement (GitHub Issue) | https://github.com/sierra-research/tau2-bench/issues/283 | ✅ live |
+
+
+---
+
+## Attribution and Credits
+
+| Role | Details |
+|---|---|
+| Author | richh-s (10Academy TRP1 Program, Cohort 2026) |
+| Program | [10Academy Forward-Deployed Challenge](https://www.10academy.org) |
+| Scenario | Tenacious Consulting and Outsourcing (fictional scenario provided by 10Academy) |
+| Benchmark baseline | τ²-Bench by Sierra Research — [github.com/sierra-research/tau2-bench](https://github.com/sierra-research/tau2-bench) |
+| Training framework | Unsloth + TRL (HuggingFace) |
+| Evaluation framework | Langfuse (observability), Resend (email), Africa's Talking (SMS), Cal.com (calendar) |
+
+**Papers this work builds on:**
+- Rafailov et al. (NeurIPS 2023) — Direct Preference Optimization
+- Meng, Xia & Chen (NeurIPS 2024) — SimPO
+- Kim et al. (2024) — Prometheus 2
+- Li et al. (2025) — Preference Leakage
+- Gebru et al. (2021) — Datasheets for Datasets
+- Pushkarna et al. (2022) — Data Cards
+
+**License:** CC-BY-4.0. See `LICENSE` file.
