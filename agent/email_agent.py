@@ -1,15 +1,32 @@
 from openai import OpenAI
 import os
 import json
+import re
 import sys
+from datetime import datetime, UTC
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from agent.load_seed import build_system_prompt_context, build_few_shot_block
 
+# ── Model constants ──────────────────────────────────────────────────────────
+# Composer and judge must be different model families (preference-leakage prevention).
+# Composer = Claude (Anthropic via OpenRouter).
+# Judge = Qwen (Alibaba via OpenRouter) — never the same family as the composer.
+COMPOSER_MODEL = "anthropic/claude-sonnet-4.6"
+JUDGE_MODEL = os.environ.get("TONE_JUDGE_MODEL", "qwen/qwen3-next-80b-a3b-instruct")
+
+# ── Regeneration loop constants ──────────────────────────────────────────────
+MAX_ATTEMPTS = 2           # total LLM calls (initial + 1 retry on single-marker fail)
+SCORE_THRESHOLD = 4        # any marker below this triggers a retry or escalation
+ESCALATION_THRESHOLD = 2   # this many failed markers → escalate immediately, no retry
+
+# Escalation log path — written by compose_with_tone_gate, read by human reviewers
+_ESCALATION_LOG = Path(__file__).parent.parent / "eval" / "escalations.jsonl"
+
 client = OpenAI(
     api_key=os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY"),
-    base_url=os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+    base_url=os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
 )
 
 _SEED_CONTEXT = None
@@ -28,6 +45,8 @@ def _get_few_shot_block() -> str:
         _FEW_SHOT_BLOCK = build_few_shot_block(n_transcripts=3)
     return _FEW_SHOT_BLOCK
 
+
+# ── System prompt ────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT_TEMPLATE = """\
 You are an outreach agent for Tenacious Consulting and Outsourcing.
@@ -151,6 +170,51 @@ DISCOVERY TRANSCRIPT EXAMPLES (tone and structure reference):
 
 CONFIDENCE_MAP = {"high": 1.0, "medium": 0.7, "low": 0.4}
 
+# Per-marker repair instructions injected into the feedback prompt on retry.
+# Each string tells the model exactly what was wrong and how to fix it.
+_MARKER_REPAIR = {
+    "direct": (
+        "Reduce body length if over the word limit. "
+        "Remove every sentence that does not reference a specific signal or make the ask. "
+        "Ensure exactly ONE call-to-action — '15 minutes' — and nothing else."
+    ),
+    "grounded": (
+        "Every factual claim must name a specific value from the brief: dollar amount, "
+        "role count, days-ago, or named leadership change. "
+        "For any signal with confidence='low' or fewer than 5 open roles, switch to "
+        "interrogative phrasing: 'Is X the case?' not 'You are doing X'."
+    ),
+    "honest": (
+        "Remove every claim not directly traceable to a field in the hiring signal brief. "
+        "If job-post velocity is low or medium confidence, use inquiry phrasing throughout. "
+        "Do not reference bench headcount or specific capacity numbers. "
+        "Do not name peer practices that are not in the competitor gap brief."
+    ),
+    "professional": (
+        "Scan for every banned phrase (world-class, top talent, rockstar, skyrocket, etc.) "
+        "and replace with plain language. "
+        "Replace any use of 'bench' with 'engineering team' or 'available capacity'. "
+        "Calibrate vocabulary to a CTO or VP Engineering reading this between meetings."
+    ),
+    "non_condescending": (
+        "Reframe every competitor gap as a research finding or open question, "
+        "never as a deficiency of the prospect's leadership. "
+        "Replace 'you are falling behind' → "
+        "'peers in your sector are doing X — curious if that's on your roadmap'. "
+        "Never imply the prospect is late, behind, or failing."
+    ),
+}
+
+_ROAST_REPAIR = (
+    "The email would be screenshotted and shared publicly as a negative example. "
+    "Check for: (1) any banned phrases still present, "
+    "(2) unfilled bracket placeholders like [First Name] or [Company], "
+    "(3) condescending framing that implies the recipient is failing or behind, "
+    "(4) claims that could be disproved in 10 seconds (e.g. wrong funding round, "
+    "fake hiring numbers), (5) passive-aggressive language about not replying. "
+    "Rewrite to be specific, grounded, and peer-level in every sentence."
+)
+
 
 def _build_system_prompt() -> str:
     return SYSTEM_PROMPT_TEMPLATE.format(
@@ -196,16 +260,7 @@ def build_decision_flow_directives(
     is_re_engagement: bool = False,
     pricing_in_scope: bool = False,
 ) -> dict:
-    """Apply pre-LLM gates from the outreach decision flow.
-
-    Returns a dict with:
-      - directives: list[str] of additional system instructions
-      - icp_segment_number: int
-      - icp_segment_confidence: float
-      - ai_maturity_score: int
-      - segment_4_blocked: bool
-      - bench_supports_ask: bool
-    """
+    """Apply pre-LLM gates. Returns directives injected into the user prompt."""
     signals = brief.get("signals") or {}
 
     icp_signal = signals.get("signal_6_icp_segment") or {}
@@ -309,7 +364,13 @@ def compose_outreach_email(
     bench_summary: dict,
     is_re_engagement: bool = False,
     pricing_in_scope: bool = False,
-) -> dict:
+    extra_feedback: str = "",
+) -> tuple[dict, dict]:
+    """Raw single-shot LLM composer. No scoring, no regeneration.
+
+    Returns (draft_dict, usage_dict).
+    Call compose_with_tone_gate() for the gated version.
+    """
     avg_conf = compute_avg_confidence(brief["signals"])
     mode = "ASSERTION" if avg_conf >= 0.70 else "INQUIRY"
 
@@ -340,7 +401,7 @@ Competitor Gap Brief:
 
 Available engineering team capacity:
 {json.dumps(bench_summary, indent=2)}
-
+{extra_feedback}
 Return valid JSON only — no markdown, no backticks:
 {{
   "subject": "string (under 60 chars, starts with Request/Follow-up/Context/Question)",
@@ -353,12 +414,12 @@ Return valid JSON only — no markdown, no backticks:
 }}
 """
     response = client.chat.completions.create(
-        model="anthropic/claude-sonnet-4.6",
+        model=COMPOSER_MODEL,
         max_tokens=700,
         messages=[
             {"role": "system", "content": _build_system_prompt()},
-            {"role": "user", "content": prompt}
-        ]
+            {"role": "user", "content": prompt},
+        ],
     )
     text = response.choices[0].message.content.strip()
     if text.startswith("```json"):
@@ -366,3 +427,320 @@ Return valid JSON only — no markdown, no backticks:
     elif text.startswith("```"):
         text = text[3:-3].strip()
     return json.loads(text), dict(response.usage)
+
+
+# ── Tone-preservation gate ───────────────────────────────────────────────────
+
+def _build_task_for_scoring(
+    draft: dict,
+    brief: dict,
+    bench_summary: dict,
+    is_re_engagement: bool,
+) -> dict:
+    """Wrap composer output into the task shape scoring_evaluator.score_task expects."""
+    return {
+        "task_id": "RUNTIME-COMPOSE",
+        "candidate_output": {
+            "subject": draft.get("subject", ""),
+            "body": draft.get("body", ""),
+            "message_type": "re_engagement" if is_re_engagement else "cold",
+        },
+        "input": {
+            "hiring_signal_brief": brief,
+            "bench_summary": bench_summary,
+        },
+        "ground_truth": {},
+        "failure_dimension": "runtime",
+    }
+
+
+def build_feedback_prompt(
+    draft: dict,
+    failed_markers: list[str],
+    score_result: dict,
+    brief: dict,
+) -> str:
+    """Build a targeted repair instruction for the regeneration prompt.
+
+    Tells the model exactly which marker failed, at what score, what the rubric
+    requires, and (where possible) which signal values to use in the rewrite.
+    """
+    lines = ["\n\n--- FEEDBACK FROM PREVIOUS ATTEMPT ---"]
+    lines.append(
+        f"Your previous draft failed {len(failed_markers)} tone "
+        f"marker(s): {', '.join(m.upper() for m in failed_markers)}."
+    )
+
+    marker_scores = score_result.get("marker_scores") or {}
+    det_checks = score_result.get("deterministic_checks") or {}
+
+    for marker in failed_markers:
+        score = marker_scores.get(marker, "?")
+        repair = _MARKER_REPAIR.get(marker, "Rewrite this section carefully.")
+        lines.append(
+            f"\n{marker.upper()} marker failed (score {score}/5). {repair}"
+        )
+
+    # Surface concrete brief values to anchor the rewrite
+    signals = brief.get("signals") or {}
+    job_sig = signals.get("signal_2_job_post_velocity") or {}
+    eng_roles = job_sig.get("engineering_roles")
+    job_conf = job_sig.get("confidence", "")
+    if eng_roles is not None and ("grounded" in failed_markers or "honest" in failed_markers):
+        lines.append(
+            f"\nSignal anchors from the brief: "
+            f"open_engineering_roles={eng_roles}, "
+            f"job_post_confidence={job_conf!r}. "
+            f"If fewer than 5 roles or confidence is 'low'/'medium', "
+            f"you must use interrogative phrasing."
+        )
+
+    # Surface any deterministic failures too
+    det_fails = [k for k, v in det_checks.items() if not v.get("passed")]
+    if det_fails:
+        lines.append(
+            f"\nDeterministic check failures (must also fix): {', '.join(det_fails)}. "
+            f"Details: "
+            + "; ".join(
+                f"{k}: {det_checks[k].get('detail', '')}"
+                for k in det_fails
+            )
+        )
+
+    lines.append("\nRewrite the ENTIRE email from scratch addressing every point above.")
+    lines.append("--- END FEEDBACK ---\n")
+    return "\n".join(lines)
+
+
+def linkedin_roast_test(
+    draft_subject: str,
+    draft_body: str,
+    model: str = JUDGE_MODEL,
+) -> bool:
+    """Binary judge: would a senior VP of Engineering screenshot and post this email?
+
+    Returns True (passed — would NOT be posted) or False (failed — would be posted).
+    Uses JUDGE_MODEL (Qwen), a different family from the Claude composer.
+    Falls back to True (permissive) if the API call fails, so a network error
+    never blocks a send — deterministic checks are the authoritative gate.
+    """
+    api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return True  # offline / no key — skip roast test
+
+    prompt = f"""You are a senior VP of Engineering who just received this cold email. Read it carefully.
+
+Subject: {draft_subject}
+Body:
+{draft_body}
+
+Would you screenshot this email and post it on LinkedIn with a sarcastic or critical caption?
+
+Answer YES if the email:
+- Contains factually wrong information about your company
+- Talks down to you or implies you are behind peers
+- Is obviously a template with unfilled tokens like [First Name] or [Company]
+- Makes claims you could disprove in 10 seconds on Google
+- Has passive-aggressive language about not replying
+- Promises things that seem impossible or fabricated
+- Uses any of these exact phrases: "world-class", "top talent", "skyrocket", \
+"I hope this email finds you well", "per my last email", "quick chat"
+
+Answer NO if the email:
+- References something real and specific about this company's situation
+- Asks rather than assumes when signal is weak
+- Respects the reader's time with one clear ask
+- Makes a claim the recipient could verify and it would check out
+
+Respond with exactly one word: YES or NO.
+Then on the next line, one sentence explaining why."""
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            max_tokens=50,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+        )
+        text = response.choices[0].message.content.strip()
+        verdict = text.split("\n")[0].strip().upper()
+        return verdict == "NO"  # True = passed (would NOT post)
+    except Exception:
+        return True  # fail-open: network errors don't block send
+
+
+def _log_escalation(
+    draft: dict,
+    failed_markers: list[str],
+    brief: dict,
+    reason: str = "",
+) -> None:
+    """Append an escalation record to eval/escalations.jsonl."""
+    try:
+        _ESCALATION_LOG.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "reason": reason or f"failed_markers={failed_markers}",
+            "failed_markers": failed_markers,
+            "subject": draft.get("subject", ""),
+            "body": draft.get("body", ""),
+            "company": (brief.get("firmographics") or {}).get("industry", ""),
+            "prospect_domain": brief.get("prospect_domain", ""),
+        }
+        with _ESCALATION_LOG.open("a") as f:
+            f.write(json.dumps(row) + "\n")
+    except Exception:
+        pass  # escalation logging must never crash the pipeline
+
+
+def compose_with_tone_gate(
+    brief: dict,
+    competitor_brief: dict,
+    bench_summary: dict,
+    is_re_engagement: bool = False,
+    pricing_in_scope: bool = False,
+) -> tuple[dict | None, dict, dict]:
+    """Compose, score, and regenerate until the email passes or escalation triggers.
+
+    Implements the full tone-preservation gate described in the Week 10 spec:
+
+      for attempt in range(MAX_ATTEMPTS):
+          draft = compose_outreach_email(...)
+          score  = score_task(draft, judge=JUDGE_MODEL)
+          failed = [m for m, s in score["marker_scores"] if s < SCORE_THRESHOLD]
+
+          if not failed:          → run roast test; return on pass
+          if len(failed) >= 2:    → escalate immediately (no retry)
+          else:                   → build feedback prompt and retry
+
+      After MAX_ATTEMPTS without a clean draft → escalate.
+
+    Returns:
+      (draft | None, usage_dict, gate_result_dict)
+      draft is None when the email was escalated (do not send).
+    """
+    from scoring_evaluator import score_task  # local import avoids circular at module load
+
+    extra_feedback = ""
+    draft: dict = {}
+    usage: dict = {}
+    last_score_result: dict = {}
+    last_failed: list[str] = []
+
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            draft, usage = compose_outreach_email(
+                brief=brief,
+                competitor_brief=competitor_brief,
+                bench_summary=bench_summary,
+                is_re_engagement=is_re_engagement,
+                pricing_in_scope=pricing_in_scope,
+                extra_feedback=extra_feedback,
+            )
+        except Exception as e:
+            return None, {}, {
+                "status": "error",
+                "reason": f"compose_exception: {type(e).__name__}: {e}",
+                "attempt": attempt + 1,
+                "failed_markers": [],
+                "roast_verdict": "SKIPPED",
+            }
+
+        task = _build_task_for_scoring(draft, brief, bench_summary, is_re_engagement)
+        try:
+            score_result = score_task(task, use_judge=True, judge_model=JUDGE_MODEL)
+        except Exception as e:
+            return None, usage, {
+                "status": "error",
+                "reason": f"score_exception: {type(e).__name__}: {e}",
+                "attempt": attempt + 1,
+                "failed_markers": [],
+                "roast_verdict": "SKIPPED",
+            }
+
+        last_score_result = score_result
+        marker_scores = score_result.get("marker_scores") or {}
+        det_checks = score_result.get("deterministic_checks") or {}
+
+        failed_markers = [
+            m for m, s in marker_scores.items() if s < SCORE_THRESHOLD
+        ]
+        det_fails = [k for k, v in det_checks.items() if not v.get("passed")]
+        last_failed = failed_markers + [f"det:{d}" for d in det_fails]
+
+        # ── All checks pass: run roast test, then return ──────────────────
+        if not failed_markers and not det_fails:
+            passed_roast = linkedin_roast_test(
+                draft.get("subject", ""),
+                draft.get("body", ""),
+            )
+            if passed_roast:
+                return draft, usage, {
+                    "status": "sent",
+                    "attempt": attempt + 1,
+                    "failed_markers": [],
+                    "roast_verdict": "NO",
+                    "marker_scores": marker_scores,
+                    "composite_score": score_result.get("composite_score"),
+                }
+            # Roast failed: treat as DIRECT marker failure and retry if budget remains
+            if attempt < MAX_ATTEMPTS - 1:
+                extra_feedback = build_feedback_prompt(
+                    draft=draft,
+                    failed_markers=["direct"],
+                    score_result={
+                        **score_result,
+                        "marker_scores": {**marker_scores, "direct": 1},
+                    },
+                    brief=brief,
+                )
+                extra_feedback += f"\n\nROAST TEST FAILURE: {_ROAST_REPAIR}"
+                last_failed = ["direct (roast_fail)"]
+                continue
+            # Out of retries after roast fail
+            _log_escalation(draft, ["direct (roast_fail)"], brief, reason="roast_test_failed")
+            return None, usage, {
+                "status": "roast_fail",
+                "attempt": attempt + 1,
+                "failed_markers": ["direct (roast_fail)"],
+                "roast_verdict": "YES",
+                "marker_scores": marker_scores,
+            }
+
+        # ── 2+ markers failed: escalate immediately ────────────────────────
+        if len(failed_markers) >= ESCALATION_THRESHOLD:
+            _log_escalation(draft, failed_markers + det_fails, brief,
+                            reason=f"escalation_threshold_exceeded_attempt_{attempt+1}")
+            return None, usage, {
+                "status": "escalated",
+                "attempt": attempt + 1,
+                "failed_markers": failed_markers,
+                "det_failures": det_fails,
+                "roast_verdict": "SKIPPED",
+                "marker_scores": marker_scores,
+                "reason": (
+                    f"{len(failed_markers)} tone markers below {SCORE_THRESHOLD} "
+                    f"({', '.join(failed_markers)}); "
+                    f"escalation threshold {ESCALATION_THRESHOLD} reached on attempt {attempt+1}"
+                ),
+            }
+
+        # ── Exactly 1 marker failed: build feedback and retry ─────────────
+        extra_feedback = build_feedback_prompt(
+            draft=draft,
+            failed_markers=failed_markers + det_fails,
+            score_result=score_result,
+            brief=brief,
+        )
+
+    # Exhausted all attempts without a clean draft
+    _log_escalation(draft, last_failed, brief,
+                    reason=f"exhausted_{MAX_ATTEMPTS}_attempts")
+    return None, usage, {
+        "status": "escalated",
+        "attempt": MAX_ATTEMPTS,
+        "failed_markers": last_failed,
+        "roast_verdict": "SKIPPED",
+        "marker_scores": (last_score_result.get("marker_scores") or {}),
+        "reason": f"Exhausted {MAX_ATTEMPTS} attempts. Last failures: {last_failed}",
+    }
