@@ -1,0 +1,33 @@
+version: "3.8"
+
+# Reference compose for self-hosted Cal.com.
+# Not used in the current deployment (SaaS is used instead — see agent/calendar.py).
+# To run locally: docker compose up -d
+# Cal.com UI will be available at http://localhost:3000
+
+services:
+  calcom:
+    image: calcom/cal.com:latest
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://calcom:calcom@db:5432/calcom
+      NEXTAUTH_SECRET: changeme
+      NEXTAUTH_URL: http://localhost:3000
+      CALENDSO_ENCRYPTION_KEY: changeme32charslongkey123456789
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: calcom
+      POSTGRES_PASSWORD: calcom
+      POSTGRES_DB: calcom
+    volumes:
+      - calcom_db:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  calcom_db:

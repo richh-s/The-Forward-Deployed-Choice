@@ -80,9 +80,11 @@ def run_training(config: dict, dry_run: bool = False) -> None:
     simpo_cfg = config["simpo"]
     train_cfg = config["training"]
 
-    log.info("Loading model: %s", model_name)
+    backbone_revision = config.get("backbone_hf_revision", None)
+    log.info("Loading model: %s (revision=%s)", model_name, backbone_revision or "latest")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=model_name,
+        revision=backbone_revision,
         max_seq_length=train_cfg["max_length"],
         dtype=None,
         load_in_4bit=False,

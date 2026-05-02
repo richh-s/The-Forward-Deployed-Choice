@@ -1,3 +1,12 @@
+# DEVIATION NOTE: This implementation uses Cal.com SaaS
+# (cloud-hosted) rather than self-hosted Docker Compose
+# as specified. Reason: the self-hosted Docker image
+# requires PostgreSQL and a domain with SSL for webhooks,
+# which adds infrastructure complexity beyond the
+# challenge scope. The SaaS API surface is identical.
+# A docker-compose.yml is provided in /infra/calcom/
+# for reference but is not used in this deployment.
+
 import httpx
 import os
 import uuid

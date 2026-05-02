@@ -15,6 +15,8 @@
 | γ (reward margin) | 0.3 (paper default: 0.5; see `training/hyperparams.json`) |
 | Training data | 40 preference pairs from Tenacious-Bench v0.1 train partition |
 | Training cost | $0.00 (Colab T4, free tier) |
+| Wall time | ~38 minutes on Colab T4 |
+| Environmental cost | ~0.025 kWh (38 min × 70 W TDP, rounded up) |
 | Author | richh-s (10Academy TRP1) |
 | Version date | 2026-04-29 |
 

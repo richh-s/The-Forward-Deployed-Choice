@@ -159,7 +159,7 @@ Researchers and practitioners building or evaluating B2B sales AI agents. Users 
 
 **Are there restrictions on use?**
 
-Tasks are released under MIT license. MIT was chosen because (a) the dataset is intended for academic and commercial reuse in B2B AI evaluation research, (b) the task inputs are synthetic with no real prospect PII, and (c) restrictive licenses (CC-BY-NC, CC-BY-SA) would limit use in downstream commercial evaluation tooling, which is the primary intended application. No real prospect data is included. Users should not represent benchmark results as if they reflect real Tenacious Consulting operations or prospects.
+Tasks are released under **CC-BY-4.0** (Creative Commons Attribution 4.0 International). CC-BY-4.0 was chosen because (a) the dataset is intended for academic and commercial reuse in B2B AI evaluation research, (b) the task inputs are synthetic with no real prospect PII, and (c) CC-BY-4.0 permits downstream commercial use while requiring attribution — appropriate for an evaluation benchmark intended to be cited and extended by other practitioners. Restrictive licenses (CC-BY-NC, CC-BY-SA) were considered and rejected because they would prevent use in commercial evaluation tooling, which is the primary intended application. Full license text: `LICENSE` file in repository root. No real prospect data is included. Users should not represent benchmark results as if they reflect real Tenacious Consulting operations or prospects.
 
 ---
 

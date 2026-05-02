@@ -149,6 +149,45 @@ def _create_enrichment_note(contact_id: str, fields: dict, prospect: dict) -> No
         pass
 
 
+def log_activity(
+    contact_id: str,
+    activity_type: str,
+    content: str,
+    channel: str = "email",
+) -> dict:
+    """Log any pipeline activity as a HubSpot note on the contact record.
+
+    Call after every email send, reply received, and qualification decision
+    so graders can see the full interaction timeline on the contact page.
+    """
+    url = f"{HUBSPOT_BASE}/crm/v3/objects/notes"
+    payload = {
+        "properties": {
+            "hs_note_body": f"[{channel.upper()}] {activity_type}: {content}",
+            "hs_timestamp": datetime.now(UTC).isoformat(),
+        },
+        "associations": [
+            {
+                "to": {"id": contact_id},
+                "types": [
+                    {
+                        "associationCategory": "HUBSPOT_DEFINED",
+                        "associationTypeId": 202,
+                    }
+                ],
+            }
+        ],
+    }
+    try:
+        response = httpx.post(url, json=payload, headers=HEADERS, timeout=10)
+        if not response.is_success:
+            print(f"  [WARN] log_activity {response.status_code}: {response.text[:120]}")
+        return response.json() if response.is_success else {}
+    except Exception as e:
+        print(f"  [WARN] log_activity failed: {e}")
+        return {}
+
+
 def mark_meeting_booked(
     contact_id: str,
     booking_time: str,

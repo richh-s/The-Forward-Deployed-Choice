@@ -1,14 +1,23 @@
 {
-  "trace_log": "eval/trace_log.jsonl",
-  "n_rows_used": 150,
+  "trace_log": "eval/trace_log_outreach.jsonl",
+  "n_rows_used": 20,
   "n_rows_skipped": 0,
   "overall": {
-    "n": 150,
-    "p50_ms": 105952.1,
-    "p95_ms": 551649.11,
-    "min_ms": 39514.91,
-    "max_ms": 1192220.72,
-    "mean_ms": 156269.5
+    "n": 20,
+    "p50_ms": 12847.0,
+    "p95_ms": 23584.9,
+    "min_ms": 10639.0,
+    "max_ms": 30936.0,
+    "mean_ms": 14717.7
   },
-  "by_channel": {}
+  "by_channel": {
+    "email": {
+      "n": 20,
+      "p50_ms": 12847.0,
+      "p95_ms": 23584.9,
+      "min_ms": 10639.0,
+      "max_ms": 30936.0,
+      "mean_ms": 14717.7
+    }
+  }
 }

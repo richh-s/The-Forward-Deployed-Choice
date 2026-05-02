@@ -26,7 +26,10 @@ log = logging.getLogger(__name__)
 
 # ── constants ────────────────────────────────────────────────────────────────
 
-NGRAM_N = 15  # 8 was too small; caught structural template overlap, not factual contamination
+NGRAM_N = 8   # Primary check per rubric spec: flag any held_out–train pair sharing an 8-gram on input fields
+NGRAM_N_STRICT = 15  # Secondary justification check: n=15 filters only factual-content overlap
+                     # (n=8 caught structural template boilerplate shared by all programmatic tasks;
+                     #  n=15 result is in methodology_note below)
 EMBEDDING_THRESHOLD = 0.85
 TIME_WINDOW_RE = re.compile(
     r"\b(January|February|March|April|Jan|Feb|Mar|Apr)\s+20(25|26)\b",
@@ -319,11 +322,17 @@ def run_contamination_checks(
         ),
     }
 
-    # Check 1
-    log.info("Running n-gram overlap check …")
-    ngram_result = check_ngram_overlap(held_out, train)
+    # Check 1a: primary 8-gram check (per rubric spec)
+    log.info("Running n-gram overlap check (n=%d, primary) …", NGRAM_N)
+    ngram_result = check_ngram_overlap(held_out, train, n=NGRAM_N)
     results["ngram_check"] = ngram_result
-    log.info("N-gram check: passed=%s violations=%d", ngram_result["passed"], len(ngram_result["violations"]))
+    log.info("N-gram check (n=%d): passed=%s violations=%d", NGRAM_N, ngram_result["passed"], len(ngram_result["violations"]))
+
+    # Check 1b: stricter 15-gram check (factual-content check, fewer template false-positives)
+    log.info("Running n-gram overlap check (n=%d, strict) …", NGRAM_N_STRICT)
+    ngram_strict_result = check_ngram_overlap(held_out, train, n=NGRAM_N_STRICT)
+    results["ngram_check_strict_n15"] = ngram_strict_result
+    log.info("N-gram check (n=%d): passed=%s violations=%d", NGRAM_N_STRICT, ngram_strict_result["passed"], len(ngram_strict_result["violations"]))
 
     # Check 2
     if skip_embeddings:

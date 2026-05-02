@@ -268,35 +268,46 @@ def page1_story():
     s.append(p(delta_note, sSmallJ))
     s.append(sp(10))
 
-    # Cost / Stalled-thread side by side
-    s.append(p("COST PER LEAD [C002, C005] · STALLED-THREAD RATE [C012]", sSec))
+    # Cost / Stalled-thread / Outbound performance — all in one row
+    s.append(p("COST PER LEAD [C002, C005] · STALLED-THREAD RATE [C012] · OUTBOUND PERFORMANCE [C013]", sSec))
     s.append(hr())
 
     cost_hdr = [[p("Metric", sCellBW), p("Value", sCellBW), p("Ref", sCellBW)]]
     cost_rows = [
-        [p("Cost/conversation",     sCell), p("$0.0059",      sCellC), p("[C005]",              sCell)],
-        [p("Cost/lead target",      sCell), p("< $5.00",      sCellC), p("Tenacious",            sCell)],
-        [p("Kill-switch",           sCell), p("> $8.00",      sCellC), p("auto-pause",           sCell)],
-        [p("HubSpot Breeze equiv",  sCell), p("$1.00/ql",     sCellC), p("HubSpot Apr 26",       sCell)],
-        [p("Status",                sCell), p("Within target",   sCellC), p("[C005]",            sCell)],
+        [p("Cost/conversation",     sCell), p("$0.0059",      sCellC), p("[C005]",         sCell)],
+        [p("Cost/lead target",      sCell), p("< $5.00",      sCellC), p("Tenacious",       sCell)],
+        [p("Kill-switch",           sCell), p("> $8.00",      sCellC), p("auto-pause",      sCell)],
+        [p("HubSpot Breeze equiv",  sCell), p("$1.00/ql",     sCellC), p("HubSpot Apr 26",  sCell)],
+        [p("Status",                sCell), p("Within target", sCellC), p("[C005]",         sCell)],
     ]
     cost_tbl = tbl(cost_hdr + cost_rows, [90, 55, 65])
 
-    stall_hdr = [[p("Process", sCellBW), p("Rate", sCellBW), p("Ref", sCellBW)]]
+    # Stalled-thread rows + outbound performance rows in a single right-side table
+    stall_hdr = [[p("Process / Outreach type", sCellBW), p("Rate", sCellBW), p("Ref", sCellBW)]]
     stall_rows = [
-        [p("Manual Tenacious", sCell), p("30–40%", sCellC), p("exec interview", sCell)],
-        [p("This system",      sCell), p("5%",     sCellC), p("traces [C012]",  sCell)],
-        [p("Delta",            sCell), p("−25–35pp",sCellC),p("improvement",   sCell)],
+        [p("Manual Tenacious",       sCell), p("30–40%",   sCellC), p("exec interview", sCell)],
+        [p("This system",            sCell), p("5%",       sCellC), p("traces [C012]",  sCell)],
+        [p("Stalled-thread δ",       sCell), p("−25–35pp", sCellC), p("improvement",   sCell)],
+        [p("Research-led (1st-pass tone)", sCell), p("94%", sCellC), p("[C013]",        sCell)],
+        [p("Generic/weak-signal",    sCell), p("25%",      sCellC), p("[C013]",         sCell)],
+        [p("Research vs generic δ",  sCell), p("+69pp",    sCellC), p("[C013]",         sCell)],
     ]
-    stall_tbl = tbl(stall_hdr + stall_rows, [75, 45, 70])
+    stall_tbl = tbl(stall_hdr + stall_rows, [105, 40, 50])
 
     side = Table(
         [[cost_tbl, sp(1), stall_tbl]],
-        colWidths=[215, 8, 195],
+        colWidths=[215, 8, 200],
         style=TableStyle([("VALIGN",(0,0),(-1,-1),"TOP"),("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),0)])
     )
     s.append(side)
-    s.append(sp(10))
+    s.append(p(
+        "<i>Outbound performance: synthetic eval across 20 prospects (eval/trace_log_outreach.jsonl, outbound_variant field). "
+        "Research-led = signal_confidence ∈ {high, medium} AND ai_maturity ≥ 1. "
+        "Rate = emails passing all 5 tone markers on first attempt. "
+        "Live A/B reply-rate data pending pilot deployment.</i>",
+        sItal
+    ))
+    s.append(sp(6))
 
     # Dollar impact
     s.append(p("ANNUALISED DOLLAR IMPACT · TENACIOUS INTERNAL ACVS × TRACE CONVERSION RATES", sSec))

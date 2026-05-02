@@ -1,6 +1,8 @@
 {
   "algorithm": "SimPO",
   "backbone": "Qwen/Qwen2.5-1.5B-Instruct",
+  "backbone_hf_revision": "a70bb27e8f475fc1b95f8fb7b1a982d57793fc8e",
+  "backbone_revision_note": "HF commit pinned at authoring time (2026-04-29). Verify with: git -C ~/.cache/huggingface/hub/models--Qwen--Qwen2.5-1.5B-Instruct rev-parse HEAD",
   "note": "Qwen 3.5 2B was unavailable via Unsloth at authoring time; Qwen2.5-1.5B is the supported 2B-class model. Adapter is functionally equivalent for rejection-sampling deployment.",
   "lora": {
     "r": 16,
