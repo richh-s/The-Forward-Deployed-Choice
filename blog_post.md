@@ -56,7 +56,7 @@ P-009 in trace `9bdba65c`, we extracted the input context (bench_summary with
 0 ML engineers) and the failing output, then built a task where the ground
 truth is "no capacity commitment."
 
-**Programmatic (51 tasks, 25.5%):** Template expansion across the 4 ICP
+**Programmatic (50 tasks, 25.0%):** Template expansion across the 4 ICP
 segments × 4 AI maturity levels × 3 confidence levels. This is the combinatorial
 coverage layer — it ensures we have examples for every cell in the segment × maturity
 matrix, including edge cases like "funded AND post-layoff simultaneously."
@@ -67,11 +67,11 @@ diversity without copy-pasting. The judge model (Qwen) was always different
 from the generator (Claude) to prevent preference leakage — a lesson we
 took directly from Li et al. (2025).
 
-**Hand-authored adversarial (44 tasks, 22%):** The hardest category to get right.
+**Hand-authored adversarial (45 tasks, 22.5%):** The hardest category to get right.
 We specifically targeted the cases where the agent behaves correctly on the
 simple version of a rule but fails on the inferential version: P-011 (bench
 explicitly empty → 0% trigger rate) vs. P-009 (bench capacity requires
-inference → 100% trigger rate). All 44 were authored specifically to probe
+inference → 100% trigger rate). All 45 were authored specifically to probe
 this inconsistency.
 
 The hardest design decision was making "sounds on-brand" machine-verifiable.
@@ -129,7 +129,7 @@ where longer rejected outputs get artificially low loss.
 Training setup: Qwen2.5-1.5B-Instruct backbone, LoRA r=16 α=32, fp16, γ=0.3
 (paper default 0.5, reduced because our preference pairs are weakly-discriminating
 at the boundary — a "grounded=3" is only marginally worse than "grounded=4"),
-3 epochs, 38 minutes on Colab T4, loss converged from 1.4217 to 0.7834.
+3 epochs, 38 minutes on Colab T4, loss converged from 1.8432 to 0.7834.
 
 ---
 
@@ -189,6 +189,6 @@ adversarial, 10% multi-LLM synthesis.
 
 ---
 
-*Dataset: [tenacious-bench-v0.1](https://huggingface.co/datasets/YOUR_HF_USERNAME/tenacious-bench-v0.1)*
-*Model: [tenacious-tone-judge-lora](https://huggingface.co/YOUR_HF_USERNAME/tenacious-tone-judge-lora)*
-*Scoring evaluator: [`scoring_evaluator.py`](https://huggingface.co/datasets/YOUR_HF_USERNAME/tenacious-bench-v0.1/blob/main/scoring_evaluator.py)*
+*Dataset: [tenacious-bench-v0.1](https://huggingface.co/datasets/rich6/tenacious-bench-v0.1)*
+*Model: [tenacious-tone-judge-lora](https://huggingface.co/rich6/tenacious-tone-judge-lora)*
+*Scoring evaluator: [`scoring_evaluator.py`](https://github.com/richh-s/The-Forward-Deployed-Choice/blob/main/scoring_evaluator.py)*

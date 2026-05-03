@@ -562,6 +562,89 @@ def score_tasks_file(tasks_path: str, use_judge: bool = False, judge_model: str 
     return aggregate
 
 
+def generate_report(aggregate: dict) -> str:
+    """
+    Generate a human-readable failure taxonomy report from score_tasks_file() output.
+
+    Aggregates per-check fail rates and per-marker below-threshold rates across all tasks.
+    Requires aggregate["results"] to be present (full output, not summary-only).
+    """
+    results = aggregate.get("results", [])
+    n = len(results)
+    if n == 0:
+        return "No results to report."
+
+    n_pass = aggregate.get("n_pass", 0)
+    overall_pass_rate = aggregate.get("pass_rate", 0.0)
+
+    # Deterministic check fail rates
+    det_checks = [
+        "banned_phrase_check",
+        "signal_grounding_check",
+        "bench_match_check",
+        "word_count_check",
+        "one_ask_check",
+        "bench_word_check",
+    ]
+    det_fail_counts: dict[str, int] = {k: 0 for k in det_checks}
+    for r in results:
+        for check in det_checks:
+            if not r["deterministic_checks"].get(check, {}).get("passed", True):
+                det_fail_counts[check] += 1
+
+    # Tone marker below-4 rates (only counted when marker_scores present)
+    tone_markers = ["direct", "grounded", "honest", "professional", "non_condescending"]
+    tone_below4_counts: dict[str, int] = {m: 0 for m in tone_markers}
+    tone_total = 0
+    for r in results:
+        if r.get("marker_scores"):
+            tone_total += 1
+            for marker in tone_markers:
+                if r["marker_scores"].get(marker, 5) < 4:
+                    tone_below4_counts[marker] += 1
+
+    lines = [
+        "",
+        "Failure Taxonomy Report",
+        "=======================",
+        f"Total tasks evaluated: {n}",
+        f"Overall pass rate: {overall_pass_rate * 100:.1f}%  ({n_pass}/{n} pass)",
+        "",
+        "Dimension breakdown (deterministic checks — % that FAIL):",
+    ]
+    for check in det_checks:
+        pct = det_fail_counts[check] / n * 100
+        lines.append(f"  {check:<30} {pct:5.1f}% fail  ({det_fail_counts[check]}/{n})")
+
+    if tone_total > 0:
+        lines.append("")
+        lines.append(f"Tone marker breakdown (% scoring < 4/5, over {tone_total} judge-scored tasks):")
+        for marker in tone_markers:
+            pct = tone_below4_counts[marker] / tone_total * 100
+            label = f"{marker} (style)"
+            lines.append(f"  {label:<30} {pct:5.1f}% below 4  ({tone_below4_counts[marker]}/{tone_total})")
+    else:
+        lines.append("")
+        lines.append("Tone markers: not scored (run with --judge to include)")
+
+    # Top 3 failure modes by fail count (deterministic + tone combined)
+    all_counts: list[tuple[str, int]] = []
+    for check in det_checks:
+        all_counts.append((check, det_fail_counts[check]))
+    if tone_total > 0:
+        for marker in tone_markers:
+            all_counts.append((f"{marker} (style)", tone_below4_counts[marker]))
+    all_counts.sort(key=lambda x: x[1], reverse=True)
+
+    lines.append("")
+    lines.append("Top 3 failure modes:")
+    for i, (name, count) in enumerate(all_counts[:3], 1):
+        pct = count / n * 100
+        lines.append(f"  {i}. {name}: {count}/{n} ({pct:.1f}%)")
+
+    return "\n".join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Tenacious-Bench v0.1 Scoring Evaluator")
     group = parser.add_mutually_exclusive_group(required=True)
@@ -571,6 +654,8 @@ def main():
     parser.add_argument("--judge-model", default="qwen3-next-80b", help="Model to use for judging")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--output", help="Write JSON results to file instead of stdout")
+    parser.add_argument("--report", action="store_true",
+                        help="Print failure taxonomy report (requires --tasks; use with --judge for tone markers)")
     args = parser.parse_args()
 
     global EVAL_SEED
@@ -578,10 +663,13 @@ def main():
     random.seed(EVAL_SEED)
 
     if args.task:
+        if args.report:
+            parser.error("--report requires --tasks, not --task")
         with open(args.task) as f:
             task = json.load(f)
         result = score_task(task, use_judge=args.judge, judge_model=args.judge_model)
         output = json.dumps(result, indent=2)
+        full_output = output
     else:
         result = score_tasks_file(args.tasks, use_judge=args.judge, judge_model=args.judge_model)
         # Remove verbose results from printed output unless debugging
@@ -589,7 +677,9 @@ def main():
         output = json.dumps(summary, indent=2)
         full_output = json.dumps(result, indent=2)
 
-    if args.output:
+    if args.report and not args.task:
+        print(generate_report(result))
+    elif args.output:
         Path(args.output).write_text(output if args.task else full_output)
         print(f"Results written to {args.output}")
     else:

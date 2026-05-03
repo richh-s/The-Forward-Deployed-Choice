@@ -34,7 +34,7 @@ Process reward models are optimized for multi-step reasoning chains where reward
 **Papers supporting Path B:**
 
 - Rafailov et al. (2023): DPO foundation for preference-based critic training
-- Meng et al. (2024): SimPO as the specific algorithm (reference-free, length-normalized)
+- Meng et al. (2024, §3): SimPO as the specific algorithm (reference-free, length-normalized)
 - Li et al. (2025): Preference leakage protocol ensuring judge independence
 
 ---
@@ -59,7 +59,7 @@ ORPO (Hong, Lee & Thorne, EMNLP 2024) achieves comparable quality but requires m
 
 **What the paper recommends:**
 
-Meng et al. use γ=0.5 across all benchmarks (AlpacaEval 2, MT-Bench, Arena-Hard). They do not perform per-domain γ calibration.
+Meng et al. (Table 3) report γ=0.5 as optimal across all benchmarks (AlpacaEval 2, MT-Bench, Arena-Hard). They do not perform per-domain γ calibration.
 
 **Why our domain requires lower γ:**
 
