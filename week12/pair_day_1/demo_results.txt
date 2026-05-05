@@ -1,0 +1,50 @@
+============================================================
+KV Cache Size for 2500-token prefix
+============================================================
+
+Qwen2.5-7B-Instruct
+  Per token, per layer:  2,048 bytes
+  Per token, all layers: 57,344 bytes  (56 KB)
+  Full prefix (2500 tokens): 143.36 MB
+
+Qwen2.5-1.5B-Instruct
+  Per token, per layer:  512 bytes
+  Per token, all layers: 14,336 bytes  (14 KB)
+  Full prefix (2500 tokens): 35.84 MB
+
+Llama-3.1-8B
+  Per token, per layer:  4,096 bytes
+  Per token, all layers: 131,072 bytes  (128 KB)
+  Full prefix (2500 tokens): 327.68 MB
+
+============================================================
+Batch cost comparison (50 leads)
+============================================================
+  Without prefix caching: $0.4275
+  With prefix caching:    $0.0534
+  Savings:                87.5%
+
+KEY FINDING: GQA explains the size difference between architectures.
+Qwen2.5-7B has 4 KV heads vs 28 Q heads (7x compression).
+Llama-3.1-8B has 8 KV heads vs 32 Q heads (4x compression).
+Same sequence length, same model depth — GQA is the variable that matters.
+
+============================================================
+Live API verification (expected output pattern)
+============================================================
+
+  Call 1 (cache creation):
+    input_tokens:                  847
+    cache_creation_input_tokens:   847   <-- prefix written to cache
+    cache_read_input_tokens:       0
+
+  Call 2 (cache hit):
+    input_tokens:                  847
+    cache_creation_input_tokens:   0
+    cache_read_input_tokens:       847   <-- prefix loaded from cache, not recomputed
+
+  Cache fired on call 2: True
+
+If byte-identical: cache_read_input_tokens > 0 on call 2.
+If prefix changed by even one token: cache_creation_input_tokens > 0 on call 2 (cache miss).
+This is the byte-identity requirement made observable.

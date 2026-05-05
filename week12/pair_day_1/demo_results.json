@@ -1,0 +1,45 @@
+{
+  "kv_cache_sizes": {
+    "Qwen2.5-7B-Instruct": {
+      "per_token_per_layer_bytes": 2048,
+      "per_token_total_bytes": 57344,
+      "prefix_total_bytes": 143360000,
+      "prefix_total_mb": 143.36
+    },
+    "Qwen2.5-1.5B-Instruct": {
+      "per_token_per_layer_bytes": 512,
+      "per_token_total_bytes": 14336,
+      "prefix_total_bytes": 35840000,
+      "prefix_total_mb": 35.84
+    },
+    "Llama-3.1-8B": {
+      "per_token_per_layer_bytes": 4096,
+      "per_token_total_bytes": 131072,
+      "prefix_total_bytes": 327680000,
+      "prefix_total_mb": 327.68
+    }
+  },
+  "batch_cost_comparison": {
+    "batch_size": 50,
+    "shared_prefix_tokens": 2500,
+    "per_lead_tokens": 300,
+    "cost_no_cache_usd": 0.4275,
+    "cost_with_cache_usd": 0.0534,
+    "savings_percent": 87.5
+  },
+  "live_api_verification": {
+    "note": "Run demo_kvcache.py with ANTHROPIC_API_KEY set to see live results",
+    "expected_call_1": {
+      "call": 1,
+      "cache_creation_input_tokens": 847,
+      "cache_read_input_tokens": 0,
+      "interpretation": "Prefix written to cache on first call"
+    },
+    "expected_call_2": {
+      "call": 2,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 847,
+      "interpretation": "Prefix read from cache on second call — zero recomputation"
+    }
+  }
+}

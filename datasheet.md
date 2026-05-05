@@ -108,6 +108,18 @@ Tasks were generated using four methods:
 
 Full log: `generation_scripts/model_rotation_log.json`.
 
+**Length Bias Audit (Qwen3-Next-80B judge, Week 12 addition):**
+
+The 30 multi-LLM synthesis tasks use Qwen3-Next-80B as a quality judge. After constructing the 40 preference pairs in `training_data/preference_pairs.jsonl`, a post-hoc audit (Week 12, Day 1) found a 2.14× length gap between chosen and rejected emails: chosen mean = 108 words, rejected mean = 231 words. This exceeds the 1.5× threshold at which verbosity bias effects are considered meaningful per Zheng et al. (2023).
+
+Audit methodology and results:
+- **Point-biserial correlation** across all 40 pairs: r = −0.41, p = 0.008. Length is a statistically significant predictor of outcome (shorter email → more likely to be chosen).
+- **Swap test** on a 10-pair sample: 3/10 pairs reversed when the chosen email was padded to match the rejected email's word count without changing core persuasive content. 7/10 did not reverse.
+
+Interpretation: The length-outcome correlation is partially driven by a real quality signal (concise cold emails are more effective for B2B outreach) and partially by judge brevity preference. The 30% reversal rate (3/10 pairs) is a known limitation of the preference pairs. Downstream readers should treat the trained judge critic's Delta A = +0.332 result (see `model_card.md`) as reflecting both quality improvement and partial length-preference artifacts. A future v0.2 dataset should include an explicit length-normalization step in the judge prompt before pair construction.
+
+References: Zheng et al. (2023) *Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena* (arxiv.org/abs/2306.05685); Hu et al. (2024) *Explaining Length Bias in LLM-Based Preference Evaluations* (arxiv.org/abs/2407.01085).
+
 **Time window:**
 
 All public signals (funding rounds, layoffs, hiring trends) are set in Jan–April 2026. Verified by `contamination_check.py` time-shift check (0 violations).
