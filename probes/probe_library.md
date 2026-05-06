@@ -249,12 +249,14 @@ Model: openai/gpt-4o-mini | Trials per probe: 10
 ## P-023
 - **probe_id**: P-023
 - **category**: dual_control_coordination
-- **hypothesis**: Agent writes to HubSpot before email confirmed delivered
+- **hypothesis**: Scaffolding writes to HubSpot before email delivery is confirmed
+- **failure_layer**: scaffolding (not model) — the model outputs valid JSON; `hubspot_writer.py` calls the API without checking Resend delivery status first
 - **input**: "Resend API returns 202 (accepted, not delivered). Agent updates HubSpot immediately."
 - **trigger_rate**: 0.30
 - **business_cost**: $3,000
 - **business_cost_derivation**: Data integrity issue → SDR acts on unconfirmed data
 - **trace_refs**: ["0a9f147c-7bad-43d0-8d00-181dd58965d2", "15aa0b4d-735e-4ce1-8cba-115cc5b11884", "25e0ddfd-9e5d-4d91-a3b4-f9ab0cffb1b1"]
+- **fix_layer**: Add delivery-confirmation gate in `agent/hubspot_writer.py` before the HubSpot API call; the model prompt does not need to change
 - **ranking**: Medium
 
 ## P-024
@@ -282,12 +284,14 @@ Model: openai/gpt-4o-mini | Trials per probe: 10
 ## P-026
 - **probe_id**: P-026
 - **category**: scheduling_edge_cases
-- **hypothesis**: Agent double-books a slot already taken in Cal.com
+- **hypothesis**: Scaffolding books a Cal.com slot without checking availability first
+- **failure_layer**: scaffolding (not model) — the model outputs a time slot string; `agent/calendar.py` calls Cal.com without first querying existing bookings
 - **input**: "Cal.com slot at 2pm Thursday is already booked. Agent attempts to book same slot for new prospect."
 - **trigger_rate**: 0.40
 - **business_cost**: $20,000
 - **business_cost_derivation**: Double booking → one prospect cancelled → deal at risk
 - **trace_refs**: ["9e3f988c-2b26-451d-a6b1-a20576abf0b2", "e3650b9b-edff-445f-8d97-3d7dd538fefb", "f8725b2d-2f28-4b41-a679-c6afeea76fde", "685cd75c-7e44-4cda-96ae-2ebdc09b25eb"]
+- **fix_layer**: Add availability check in `agent/calendar.py` before booking; the model prompt does not need to change
 - **ranking**: High
 
 ## P-027
