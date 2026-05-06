@@ -50,7 +50,7 @@ The model is not making a deliberate choice. It is predicting the next token. Wh
 
 **3. The backend enforces constrained decoding against the function's JSON schema.**
 
-Once the model starts generating a tool call, the decoding algorithm validates each token against the schema you declared. If the model tries to output a field that does not exist in the schema, the backend rejects that token and samples the next highest-probability valid token. This is why function-calling produces valid JSON every time — it is not the model being careful; it is the generation being constrained.
+Once the model starts generating a tool call, the decoding algorithm validates each token against the schema you declared. If the model tries to output a field that does not exist in the schema, the backend sets that token's probability to −∞ and samples the next highest-probability valid token instead. This technique is called **logit masking** (or grammar-based constrained decoding). This is why function-calling produces valid JSON every time — it is not the model being careful; it is the generation being mechanically constrained at the hardware level.
 
 You can observe this mechanically: when function-calling fires, `response.choices[0].finish_reason` is `"tool_calls"`, not `"stop"`. Generation stopped not at a natural endpoint but at the point where the tool call JSON was complete.
 
