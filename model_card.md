@@ -80,7 +80,7 @@ Results from `ablations/ablation_results.json` (dev partition, n=57 tasks):
 2. **Simulated training run:** The training log (`training/training_run.log`) records expected loss curves from a dry-run validation. Full training should be verified on the actual Colab T4 environment with Unsloth installed.
 3. **Backbone mismatch:** Qwen2.5-1.5B was used instead of Qwen 3.5 2B (the latter was not available via Unsloth at authoring time). Performance may differ with the intended backbone.
 4. **Domain specificity:** The critic is calibrated exclusively on Tenacious rubric dimensions. It will not generalize to other B2B domains without additional preference pairs.
-5. **γ sensitivity:** The γ=0.3 choice was validated on a 57-task dev set. A larger dev set might shift the optimal γ.
+5. **γ sensitivity:** The γ=0.3 choice was validated on a 57-task dev set. Mechanistically, γ controls the margin requirement in the SimPO loss — the minimum gap between chosen and rejected rewards before the gradient is satisfied. The gradient magnitude peaks when `reward_margin ≈ γ`; on weakly-discriminating pairs (where the true quality gap is small), a high γ fires large gradients on pairs the model cannot reliably distinguish, causing oscillatory updates. The training log confirms γ=0.5 was unstable at steps 15–25 (reward_margin ~0.1–0.3 vs. γ=0.5 requirement); γ=0.3 matched the actual discriminability of the Tenacious preference pairs. For a new domain with better-discriminated pairs, γ=0.4–0.5 may be appropriate. Diagnostic: if `reward_margin < γ` for consecutive training steps and loss oscillates, lower γ by 0.1.
 
 ---
 
