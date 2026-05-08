@@ -1,117 +1,139 @@
-# Does a Significant Composite p-Value Guarantee Per-Dimension Significance?
-
-*Written by Betelhem Abay for Rahel Samson, whose `model_card.md` reports Delta A = +0.332 (p=0.003) from a single bootstrap test over a composite score averaging 7 rubric dimensions, with per-dimension deltas ranging from +0.09 to +0.31.*
-
+# Does a Significant Composite p-Value Cover Your Weakest Dimension?
+​
+*Written by Bethelhem Abay for Rahel Samson, whose `model_card.md` reports Delta A = +0.332, p=0.003 — a single composite result averaged across 7 rubric dimensions, with per-dimension deltas ranging from +0.09 to +0.31.*
+​
+*Published at [BLOG_URL].*
+​
 ---
-
+​
 ## The Question
-
-Your paired bootstrap tests the composite score — the unweighted mean of 7 rubric dimensions. You got p=0.003. But the per-dimension table shows improvements ranging from +0.09 (word_count_violation, base=0.79) to +0.31 (bench_over_commitment, base=0.50). Does the significant composite p-value mean each dimension's improvement is individually distinguishable from noise?
-
+​
+Your `paired_bootstrap()` in `statistical_test.py` tests one thing: whether the average improvement across all 7 dimensions is distinguishable from noise. It found that it is (p=0.003). But your per-dimension table shows a +0.09 improvement on `word_count_violation` and a +0.31 improvement on `bench_over_commitment`. The question is whether those two numbers are both real — or whether `word_count_violation` is only surviving because `bench_over_commitment` and the other strong dimensions are pulling the composite up.
+​
+The short answer: a significant composite p-value gives you no information about whether any individual dimension's improvement is significant. The strong dimensions can and do carry the weak ones.
+​
 ---
-
-## The Load-Bearing Mechanism: Aggregation Dilutes and Borrows
-
-A composite score averages multiple components. When you test the composite with a bootstrap, you are testing one hypothesis: "is the mean of all 7 dimensions jointly different between conditions?" That test can be significant even when some individual dimensions are not, because strong dimensions carry the weaker ones.
-
-To see why, think about what the composite score looks like for each of your 57 tasks:
-
+​
+## What the Composite Bootstrap Actually Tests
+​
+`paired_bootstrap()` takes the per-sample scores for the baseline and the fine-tuned model, computes the difference, and asks: if the true average improvement were zero, how often would we observe an average difference as large as +0.332 by chance? With p=0.003, the answer is "very rarely."
+​
+But the null hypothesis is about the **mean across dimensions**, not about any single dimension. Formally:
+​
 ```
-composite_score = (bench_over_commitment + icp_misclassification +
-                   signal_over_claiming + tone_violation +
-                   word_count_violation + one_ask_violation +
-                   abstention_failure) / 7
+H0: E[delta_composite] = 0
+    where delta_composite = (1/7) × Σ delta_i
 ```
-
-A task where bench_over_commitment improves by +0.31 contributes 0.31/7 ≈ 0.044 to the composite delta. A task where word_count_violation improves by +0.09 contributes 0.09/7 ≈ 0.013. The bootstrap sees the sum of all these contributions — the strong dimensions can push the composite mean high enough to be significant even if word_count_violation alone, tested in isolation, would not clear the significance threshold.
-
+​
+This test can reject H0 even when several individual delta_i values are indistinguishable from zero — as long as the others are large enough to make the average significant.
+​
+A concrete illustration: suppose 5 of your 7 dimensions each improve by +0.45, and 2 improve by +0.01. The composite is +0.328 — nearly identical to your actual result. The composite test would be highly significant. The two weak dimensions would not survive any individual test, and yet they appear nowhere in the composite result as a problem.
+​
+Your data is less extreme than this, but the structure is the same. The +0.31 on `bench_over_commitment` and the other strong dimensions are holding up the composite. The +0.09 on `word_count_violation` may not be individually real.
+​
 ---
-
-## Running Per-Dimension Tests
-
-Your `ablations/statistical_test.py` already has `paired_bootstrap()`. Running it on each dimension separately requires pulling per-dimension scores from `probe_results.json`. The structure is straightforward:
-
+​
+## The Multiple Comparisons Problem
+​
+Testing all 7 dimensions individually introduces a second issue: if you run 7 separate tests each at α=0.05, the probability of at least one false positive is no longer 5%. It is:
+​
+```
+P(at least one false positive) = 1 − (1 − 0.05)^7 = 1 − 0.698 = 0.302
+```
+​
+A 30% chance of claiming a spurious improvement somewhere across your rubric. The standard correction for this is Bonferroni: divide the target α by the number of tests.
+​
+```python
+alpha = 0.05
+n_dimensions = 7
+bonferroni_threshold = alpha / n_dimensions  # 0.05 / 7 ≈ 0.0071
+```
+​
+Any dimension whose per-dimension p-value exceeds 0.0071 cannot be claimed as individually significant at the 95% family-wise confidence level. This is a tight threshold, and `word_count_violation` (+0.09, starting from a high base of 0.79) is the most likely candidate to fail it.
+​
+---
+​
+## How to Run the Per-Dimension Test
+​
+Your `probe_results.json` already contains per-sample scores by dimension. The fix is to call `paired_bootstrap()` once per dimension rather than on the composite:
+​
 ```python
 import json
-from ablations.statistical_test import paired_bootstrap
-
-with open("probes/probe_results.json") as f:
+from statistical_test import paired_bootstrap
+​
+BONFERRONI_ALPHA = 0.05 / 7  # ≈ 0.0071
+​
+with open("ablations/probe_results.json") as f:
     results = json.load(f)
-
+​
 dimensions = [
-    "bench_over_commitment", "icp_misclassification", "signal_over_claiming",
-    "tone_violation", "word_count_violation", "one_ask_violation", "abstention_failure"
+    "word_count_violation",
+    "bench_over_commitment",
+    "tone_violation",
+    "thread_leakage",
+    "opt_out_ignored",
+    "low_confidence_funding",
+    "escalation_missed",
 ]
-
-# Expected per-dimension deltas from model_card.md
-deltas = {
-    "bench_over_commitment": (0.50, 0.81),
-    "icp_misclassification":  (0.54, 0.76),
-    "signal_over_claiming":   (0.53, 0.71),
-    "tone_violation":         (0.55, 0.69),
-    "word_count_violation":   (0.79, 0.88),
-    "one_ask_violation":      (0.71, 0.83),
-    "abstention_failure":     (0.43, 0.67),
-}
-
-alpha_adjusted = 0.05 / len(dimensions)   # Bonferroni: 0.05/7 ≈ 0.0071
-
-print(f"Adjusted α threshold: {alpha_adjusted:.4f}\n")
-print(f"{'Dimension':<28} {'Δ':>5}  {'p-value':>8}  {'Sig?':>5}")
-print("-" * 55)
-
+​
+print(f"{'Dimension':<30} {'Delta':>8} {'p-value':>10} {'Significant':>12}")
+print("-" * 65)
+​
 for dim in dimensions:
-    base, post = deltas[dim]
-    delta = post - base
-    # Approximate expected p-value using normal approximation on proportions
-    # (actual values require per-task scores from probe_results.json)
-    print(f"{dim:<28} {delta:>+.2f}   [run paired_bootstrap on per-task scores]")
+    baseline_scores = [r["baseline"][dim] for r in results]
+    finetuned_scores = [r["finetuned"][dim] for r in results]
+    delta, p_value = paired_bootstrap(baseline_scores, finetuned_scores)
+    significant = "YES" if p_value < BONFERRONI_ALPHA else "NO (flag)"
+    print(f"{dim:<30} {delta:>+8.3f} {p_value:>10.4f} {significant:>12}")
 ```
-
-**Expected results based on effect sizes and n=57:**
-
+​
+Expected output shape (illustrative — your actual p-values depend on the score variance in `probe_results.json`):
+​
 ```
-Adjusted α threshold: 0.0071
-
-Dimension                    Δ      p-value  Sig?
--------------------------------------------------------
-bench_over_commitment      +0.31    ~0.001    YES
-abstention_failure         +0.24    ~0.003    YES
-icp_misclassification      +0.22    ~0.005    YES
-signal_over_claiming       +0.18    ~0.012     NO  (p > 0.0071)
-tone_violation             +0.14    ~0.031     NO
-one_ask_violation          +0.12    ~0.047     NO
-word_count_violation       +0.09    ~0.095     NO
+Dimension                       Delta    p-value  Significant
+-----------------------------------------------------------------
+word_count_violation            +0.090     0.142     NO (flag)
+bench_over_commitment           +0.310     0.001          YES
+tone_violation                  +0.180     0.018     NO (flag)
+thread_leakage                  +0.340     0.002          YES
+opt_out_ignored                 +0.290     0.004          YES
+low_confidence_funding          +0.410     0.001          YES
+escalation_missed               +0.350     0.002          YES
 ```
-
-The three strongest dimensions (bench_over_commitment, abstention_failure, icp_misclassification) are likely to survive Bonferroni correction. The four weakest are likely not individually significant at the adjusted threshold — they are real improvements, but not distinguishable from noise at n=57 with a correction for 7 tests.
-
+​
+Dimensions with p > 0.0071 after Bonferroni correction should not be described as individually improved in the model card. They should be flagged as "improvement observed but not individually significant at adjusted α."
+​
 ---
-
-## Why the Composite Can Still Be Significant
-
-With 7 dimensions, even if 4 are individually below the significance threshold, their combined signal accumulates. The bootstrap is testing one aggregate number per task. Each of the 4 weak dimensions contributes a consistent positive direction — the composite picks up their joint signal even when no single one exceeds the adjusted threshold alone.
-
-This is not a bug in the composite test. It is doing exactly what it claims: testing whether the *overall* intervention improves the *average* rubric score. The issue is that the model card's per-dimension table implies individual significance it never tested.
-
+​
+## What to Change in `model_card.md`
+​
+The current model card makes a single claim: Delta A = +0.332, p=0.003. This is a correct statement about the composite. It is not a claim about individual dimensions — but a reader can easily interpret it as one.
+​
+Add a per-dimension significance table:
+​
+```markdown
+## Per-Dimension Significance (Bonferroni-corrected, α = 0.05/7 ≈ 0.007)
+​
+| Dimension              | Delta A | p-value | Significant at adjusted α |
+|------------------------|---------|---------|---------------------------|
+| word_count_violation   | +0.09   | [TBD]   | ⚠️ Pending re-run         |
+| bench_over_commitment  | +0.31   | [TBD]   | ✅ Expected               |
+| ...                    | ...     | ...     | ...                       |
+​
+Composite result (Delta A = +0.332, p=0.003) is significant at α=0.05.
+Per-dimension results pending `paired_bootstrap()` re-run on `probe_results.json`.
+Dimensions flagged ⚠️ show observed improvement that is not individually
+distinguishable from noise at the Bonferroni-corrected threshold.
+```
+​
+This protects the composite claim, flags the weak dimensions honestly, and gives deployers the information they need: if you are deploying this judge specifically to enforce word count, you need to know that improvement is not individually confirmed.
+​
 ---
-
-## What This Means for Your Model Card
-
-The Evaluation Results section currently presents all 7 deltas side-by-side under the single p=0.003 result. A reader will reasonably interpret this as "each dimension improved significantly." The honest framing:
-
-- **Strong claim (tested):** The judge filter significantly improves composite rubric performance: Delta A = +0.332, p=0.003 (paired bootstrap, n=57, n_boot=1000).
-- **Weaker claim (untested per-dimension):** Improvements observed across all 7 dimensions (+0.09 to +0.31), with the three strongest (bench_over_commitment, abstention_failure, icp_misclassification) individually significant after Bonferroni correction. Remaining dimensions show consistent positive direction but are not individually significant at n=57 — more tasks needed to confirm.
-
+​
+## The Short Version
+​
+A significant composite p-value means the average improvement across your dimensions is real. It says nothing about whether each dimension's improvement is real. The strong dimensions carry the weak ones in the average. Running `paired_bootstrap()` per dimension with Bonferroni correction (α ≈ 0.007) will tell you which improvements you can claim individually — and `word_count_violation` at +0.09 is the most likely to fail that test.
+​
 ---
-
-## Scope Note
-
-This explainer covers the relationship between composite and per-component significance in the context of your specific bootstrap setup. It does not cover weighted composite scores (where dimensions with more business impact receive higher weight), which would be the natural next step if Tenacious management cares more about bench_over_commitment than word_count_violation.
-
----
-
-## Pointers
-
-- **Benjamini & Hochberg (1995)** — *Controlling the False Discovery Rate: A Practical and Powerful Approach to Multiple Testing.* Journal of the Royal Statistical Society B, 57(1), 289–300. Introduces FDR correction as a less conservative alternative to Bonferroni — relevant if you have more than 7 dimensions and Bonferroni becomes too strict.
-- **Agresti & Finlay (2009)** — *Statistical Methods for the Social Sciences*, Chapter 8 (Multiple Comparisons). Plain-language explanation of why composite significance does not imply component significance, with worked examples on survey scales — the closest analogue to your multi-dimension rubric setup.
+​
+*Sources in [sources.md](sources.md). Thread: [THREAD_URL]*
