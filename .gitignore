@@ -27,3 +27,4 @@ training/model_weights/
 training/merged_model/
 # Cost log may contain billing details
 cost_log_private.csv
+branch_structure.json
