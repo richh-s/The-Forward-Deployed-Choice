@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio ruff
+      - name: Lint
+        run: ruff check engine tests server.py
+      - name: Import smoke test
+        run: python -c "from engine.app import create_app; create_app()"
+      - name: Migration check (fresh database)
+        run: DATABASE_URL="sqlite:///./ci-migrate.db" alembic upgrade head
+      - name: Tests
+        run: pytest tests/ -q
