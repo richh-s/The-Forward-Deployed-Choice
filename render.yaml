@@ -1,32 +1,38 @@
+databases:
+  - name: engine-db
+    plan: basic-256mb
+    databaseName: engine
+    user: engine
+
 services:
   - type: web
-    name: tenacious-webhook-server
+    name: conversion-engine
     runtime: python
+    plan: starter  # free tier spins down and pauses the worker/scheduler
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: engine-db
+          property: connectionString
+      - key: ENVIRONMENT
+        value: production
+      - key: APP_SECRET_KEY
+        generateValue: true
+      - key: BASE_URL
+        sync: false          # set to the public URL after first deploy
       - key: ANTHROPIC_API_KEY
         sync: false
-      - key: RESEND_API_KEY
+      - key: LIVE_MODE
+        value: "false"       # flip to "true" only after go-live sign-off
+      - key: SINK_EMAIL
         sync: false
-      - key: RESEND_WEBHOOK_SECRET
+      - key: SINK_PHONE
         sync: false
-      - key: HUBSPOT_ACCESS_TOKEN
-        sync: false
-      - key: CAL_API_KEY
-        sync: false
-      - key: CAL_BASE_URL
-        sync: false
-      - key: CAL_WEBHOOK_SECRET
-        sync: false
-      - key: AT_API_KEY
-        sync: false
-      - key: AT_USERNAME
-        value: sandbox
-      - key: LANGFUSE_PUBLIC_KEY
-        sync: false
-      - key: LANGFUSE_SECRET_KEY
-        sync: false
-      - key: LANGFUSE_HOST
-        value: https://cloud.langfuse.com
+      - key: RUN_WORKER
+        value: "true"
+      - key: LOG_LEVEL
+        value: INFO
