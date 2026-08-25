@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Prospects{% endblock %}
+{% block content %}
+<div class="panel">
+  <div class="row" style="justify-content:space-between">
+    <h2 style="margin:0">Prospects</h2>
+    <div class="row">
+      <a class="btn secondary {{ 'active' if not active_stage }}" href="/prospects">All</a>
+      {% for s in stages %}
+      <a class="badge {{ '' if active_stage == s else 'muted' }}" href="/prospects?stage={{ s }}">{{ s }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% if prospects %}
+  <table style="margin-top:12px">
+    <tr><th>Name</th><th>Company</th><th>Email</th><th>Stage</th><th>Touches</th><th>Updated</th></tr>
+    {% for p in prospects %}
+    <tr>
+      <td><a href="/prospects/{{ p.id }}">{{ p.name or '—' }}</a></td>
+      <td>{{ p.company or '—' }}</td>
+      <td class="mono">{{ p.email }}</td>
+      <td><span class="badge">{{ p.stage }}</span></td>
+      <td>{{ p.touch_count }}</td>
+      <td class="muted">{{ p.updated_at.strftime('%Y-%m-%d') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted" style="margin-top:12px">No prospects match.</p>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}First-run setup{% endblock %}
+{% block content %}
+<div class="panel auth-card">
+  <h2>Welcome — create your workspace</h2>
+  <p class="muted">This one-time setup creates the first workspace and its
+    admin account.</p>
+  {% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
+  <form method="post" action="/setup">
+    <label>Workspace / company name</label>
+    <input name="workspace_name" required autofocus>
+    <label>Your name</label>
+    <input name="admin_name">
+    <label>Admin email</label>
+    <input type="email" name="email" required>
+    <label>Password (min 10 characters)</label>
+    <input type="password" name="password" minlength="10" required>
+    <div style="margin-top:14px"><button>Create workspace</button></div>
+  </form>
+</div>
+{% endblock %}

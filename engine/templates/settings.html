@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+{% if welcome %}
+<div class="banner">Workspace created. Work through the sections below:
+  1) playbook, 2) sending identity, 3) provider credentials, 4) register the
+  webhook URLs — then create a campaign and import prospects.</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Workspace &amp; sending identity</h2>
+  <form method="post" action="/settings/workspace">
+    <div class="grid cols-2">
+      <div><label>Workspace name</label><input name="name" value="{{ workspace.name }}" required></div>
+      <div><label>From email (verified domain in Resend)</label>
+        <input name="from_email" value="{{ workspace.from_email or '' }}" placeholder="outreach@yourdomain.com"></div>
+      <div><label>From name</label><input name="from_name" value="{{ workspace.from_name or '' }}"></div>
+      <div><label>SMS sender ID / shortcode</label>
+        <input name="sms_sender_id" value="{{ workspace.sms_sender_id or '' }}"></div>
+    </div>
+    <label>Cal.com event URL (e.g. https://cal.com/yourteam/intro-30min)</label>
+    <input name="calcom_event_url" value="{{ workspace.calcom_event_url or '' }}">
+    <div style="margin-top:10px"><button>Save</button></div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Outbound control</h2>
+  <p>
+    Status:
+    {% if workspace.outbound_paused %}
+      <span class="badge bad">paused</span> — {{ workspace.pause_reason }}
+    {% else %}
+      <span class="badge good">sending allowed</span>
+    {% endif %}
+    {% if not live_mode %}
+      · <span class="badge warn">SINK MODE</span> — the platform is not in
+      LIVE_MODE; all messages route to the configured sink address.
+    {% endif %}
+  </p>
+  <div class="row">
+    {% if workspace.outbound_paused %}
+    <form method="post" action="/settings/resume-outbound"
+          onsubmit="return confirm('Resume outbound sending for this workspace?')">
+      <button>Resume outbound</button></form>
+    {% else %}
+    <form method="post" action="/settings/pause-outbound">
+      <button class="danger">Pause all outbound</button></form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Playbook</h2>
+  <p class="muted">The composer and reply agent may only make claims that
+    appear here. Everything else is escalated to a human.</p>
+  <form method="post" action="/settings/playbook">
+    <div class="grid cols-2">
+      <div><label>Company name</label>
+        <input name="company_name" value="{{ workspace.playbook.get('company_name', '') }}"></div>
+      <div><label>Sign-off (exact signature)</label>
+        <input name="sign_off" value="{{ workspace.playbook.get('sign_off', '') }}"></div>
+    </div>
+    <label>Company description</label>
+    <textarea name="company_description">{{ workspace.playbook.get('company_description', '') }}</textarea>
+    <label>Value proposition</label>
+    <textarea name="value_proposition">{{ workspace.playbook.get('value_proposition', '') }}</textarea>
+    <label>Ideal customer profile (ICP) definition</label>
+    <textarea name="icp_definition">{{ workspace.playbook.get('icp_definition', '') }}</textarea>
+    <label>Style guide</label>
+    <textarea name="style_guide">{{ workspace.playbook.get('style_guide', '') }}</textarea>
+    <label>Capacity / offering facts (the only capacity claims allowed)</label>
+    <textarea name="capacity_notes">{{ workspace.playbook.get('capacity_notes', '') }}</textarea>
+    <label>Public pricing notes</label>
+    <textarea name="pricing_notes">{{ workspace.playbook.get('pricing_notes', '') }}</textarea>
+    <div class="grid cols-2">
+      <div><label>Support contact (shown in SMS HELP replies)</label>
+        <input name="support_contact" value="{{ workspace.playbook.get('support_contact', '') }}"></div>
+    </div>
+    <label>Honesty constraints (one per line; defaults apply when empty)</label>
+    <textarea name="honesty_constraints">{{ (workspace.playbook.get('honesty_constraints') or []) | join('\n') }}</textarea>
+    <div style="margin-top:10px"><button>Save playbook</button></div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Provider credentials</h2>
+  <p class="muted">Stored encrypted. Configured:
+    {% for p in configured %}<span class="badge good">{{ p }}</span>{% else %}
+    <span class="muted">none yet</span>{% endfor %}</p>
+  {% for provider, fields in provider_fields.items() %}
+  <details style="margin-bottom:10px">
+    <summary>{{ provider }} {{ '✓' if provider in configured }}</summary>
+    <form method="post" action="/settings/credentials/{{ provider }}">
+      <label>Credentials JSON — fields: {{ fields | join(', ') }}</label>
+      <textarea name="payload_json" class="mono" placeholder='{"{{ fields[0] }}": "..."}'></textarea>
+      <div style="margin-top:8px"><button class="secondary">Save {{ provider }}</button></div>
+    </form>
+  </details>
+  {% endfor %}
+</div>
+
+<div class="panel">
+  <h2>Webhook URLs to register</h2>
+  <table>
+    {% for name, url in webhook_urls.items() %}
+    <tr><td style="width:180px">{{ name }}</td><td class="mono">{{ url }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted">Register each URL in the provider's dashboard and set the
+    matching webhook signing secret in the credentials above. Webhooks without
+    a configured secret are rejected. The Africa's Talking token is generated
+    automatically when you save its credentials.</p>
+</div>
+
+<div class="panel">
+  <h2>Team</h2>
+  <form method="post" action="/settings/users">
+    <div class="grid cols-3">
+      <div><label>Email</label><input type="email" name="email" required></div>
+      <div><label>Name</label><input name="name"></div>
+      <div><label>Role</label>
+        <select name="role"><option value="operator">operator</option>
+          <option value="admin">admin</option></select></div>
+    </div>
+    <label>Temporary password (min 10 chars)</label>
+    <input type="password" name="password" minlength="10" required>
+    <div style="margin-top:10px"><button class="secondary">Add user</button></div>
+  </form>
+</div>
+{% endblock %}

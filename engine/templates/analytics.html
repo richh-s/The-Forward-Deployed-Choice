@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
+{% block content %}
+<div class="panel">
+  <h2>Funnel (all time)</h2>
+  <table>
+    {% for label, value in funnel %}
+    <tr>
+      <td style="width:180px">{{ label }}</td>
+      <td style="width:80px"><strong>{{ value }}</strong></td>
+      <td><div class="funnel-bar" style="width: {{ (value / max_funnel * 100) | round(1) }}%"></div></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Health metrics — rolling {{ metrics.window_days }} days</h2>
+  <div class="grid cols-3">
+    <div class="stat"><div class="value">{{ metrics.emails_out }}</div><div class="label">Emails sent</div></div>
+    <div class="stat"><div class="value">{{ metrics.sms_out }}</div><div class="label">SMS sent</div></div>
+    <div class="stat"><div class="value">{{ metrics.qualified_leads }}</div><div class="label">Qualified leads</div></div>
+    <div class="stat"><div class="value">{{ '%.1f%%' | format(metrics.bounce_rate * 100) }}</div><div class="label">Bounce rate</div></div>
+    <div class="stat"><div class="value">{{ '%.1f%%' | format(metrics.opt_out_rate * 100) }}</div><div class="label">Opt-out rate</div></div>
+    <div class="stat"><div class="value">${{ '%.2f' | format(metrics.cost_per_qualified_lead) }}</div><div class="label">Cost / qualified lead</div></div>
+  </div>
+  <p class="muted">These metrics drive the kill-switch: breaching a threshold
+    pauses all outbound for this workspace until an admin reviews and resumes
+    it in Settings.</p>
+</div>
+{% endblock %}

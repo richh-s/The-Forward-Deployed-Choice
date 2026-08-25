@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Campaigns{% endblock %}
+{% block content %}
+<div class="panel">
+  <h2>Campaigns</h2>
+  {% if campaigns %}
+  <table>
+    <tr><th>Name</th><th>Status</th><th>Prospects</th><th>Daily cap</th><th>Approval</th></tr>
+    {% for c in campaigns %}
+    <tr>
+      <td><a href="/campaigns/{{ c.id }}">{{ c.name }}</a></td>
+      <td><span class="badge {{ 'good' if c.status == 'active' else 'muted' }}">{{ c.status }}</span></td>
+      <td>{{ counts.get(c.id, 0) }}</td>
+      <td>{{ c.daily_cap }}</td>
+      <td>{{ 'human review' if c.require_approval else 'auto ≥ ' ~ c.auto_approve_score }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">No campaigns yet — create one below.</p>{% endif %}
+</div>
+
+<div class="panel">
+  <h2>New campaign</h2>
+  <form method="post" action="/campaigns">
+    <div class="grid cols-3">
+      <div><label>Name</label><input name="name" required></div>
+      <div><label>Daily send cap</label><input type="number" name="daily_cap" value="50" min="1" max="500"></div>
+      <div><label>&nbsp;</label>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:0">
+          <input type="checkbox" name="require_approval" value="true" checked style="width:auto">
+          Require human approval of every draft
+        </label>
+      </div>
+    </div>
+    <div style="margin-top:14px"><button>Create campaign</button></div>
+  </form>
+</div>
+{% endblock %}

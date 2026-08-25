@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Pipeline{% endblock %}
+{% block content %}
+<div class="grid cols-3">
+  <div class="panel stat">
+    <div class="value">{{ pending_drafts }}</div>
+    <div class="label"><a href="/approvals">Drafts awaiting review</a></div>
+  </div>
+  <div class="panel stat">
+    <div class="value">{{ stage_counts.get('booked', 0) }}</div>
+    <div class="label">Meetings booked</div>
+  </div>
+  <div class="panel stat">
+    <div class="value">${{ '%.2f' | format(metrics.llm_cost_usd) }}</div>
+    <div class="label">LLM spend, last {{ metrics.window_days }} days</div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Pipeline</h2>
+  <table>
+    <tr>{% for s in stages %}<th>{{ s.replace('_', ' ') }}</th>{% endfor %}</tr>
+    <tr>
+      {% for s in stages %}
+      <td><a href="/prospects?stage={{ s }}">{{ stage_counts.get(s, 0) }}</a></td>
+      {% endfor %}
+    </tr>
+  </table>
+</div>
+
+<div class="grid cols-2">
+  <div class="panel">
+    <h2>Upcoming meetings</h2>
+    {% if upcoming %}
+    <table>
+      <tr><th>When</th><th>Status</th><th>Booking</th></tr>
+      {% for b in upcoming %}
+      <tr>
+        <td>{{ b.start_time.strftime('%Y-%m-%d %H:%M UTC') if b.start_time else '—' }}</td>
+        <td><span class="badge good">{{ b.status }}</span></td>
+        <td class="mono">{{ b.provider_uid[:18] }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">No confirmed bookings yet.</p>{% endif %}
+  </div>
+  <div class="panel">
+    <h2>Recent escalations</h2>
+    {% if escalations %}
+    <table>
+      <tr><th>When</th><th>Reason</th></tr>
+      {% for e in escalations %}
+      <tr>
+        <td>{{ e.created_at.strftime('%m-%d %H:%M') }}</td>
+        <td>{{ e.detail.get('reason', '')[:120] }}
+          {% if e.detail.get('prospect_id') %}
+          — <a href="/prospects/{{ e.detail['prospect_id'] }}">prospect</a>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">Nothing escalated by the reply agent.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

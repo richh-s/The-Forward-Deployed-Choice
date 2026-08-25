@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}{{ prospect.name or prospect.email }}{% endblock %}
+{% block content %}
+<div class="panel">
+  <div class="row" style="justify-content:space-between">
+    <div>
+      <h2 style="margin:0 0 4px">{{ prospect.name or prospect.email }}
+        <span class="badge">{{ prospect.stage }}</span></h2>
+      <div class="muted">{{ prospect.title }}{{ ' · ' if prospect.title and prospect.company }}{{ prospect.company }}
+        · <span class="mono">{{ prospect.email }}</span>
+        {% if prospect.phone %} · <span class="mono">{{ prospect.phone }}</span>{% endif %}
+      </div>
+    </div>
+    <form class="inline row" method="post" action="/prospects/{{ prospect.id }}/stage">
+      <select name="stage" style="width:auto">
+        {% for s in stages %}<option value="{{ s }}" {{ 'selected' if s == prospect.stage }}>{{ s }}</option>{% endfor %}
+      </select>
+      <button class="secondary">Set stage</button>
+    </form>
+  </div>
+  <div class="muted" style="margin-top:8px">
+    Touches: {{ prospect.touch_count }}
+    {% if prospect.avg_confidence is not none %} · signal confidence {{ '%.2f' | format(prospect.avg_confidence) }}{% endif %}
+    {% if prospect.next_followup_at %} · next follow-up {{ prospect.next_followup_at.strftime('%Y-%m-%d %H:%M UTC') }}{% endif %}
+    {% if prospect.hubspot_contact_id %} · HubSpot #{{ prospect.hubspot_contact_id }}{% endif %}
+  </div>
+</div>
+
+<div class="grid cols-2">
+  <div class="panel">
+    <h2>Conversation timeline</h2>
+    {% if timeline %}
+      {% for m in timeline %}
+      <div class="timeline-item {{ m.direction }}">
+        <div class="meta">
+          {{ m.created_at.strftime('%Y-%m-%d %H:%M') }} ·
+          {{ m.channel | upper }} {{ '→ out' if m.direction == 'out' else '← in' }}
+          · <span class="badge muted">{{ m.status }}</span>
+          {% if m.intent %}<span class="badge {{ 'good' if m.intent == 'warm' else 'muted' }}">{{ m.intent }}</span>{% endif %}
+        </div>
+        {% if m.subject %}<strong>{{ m.subject }}</strong>{% endif %}
+        <pre>{{ m.body }}</pre>
+      </div>
+      {% endfor %}
+    {% else %}<p class="muted">No messages yet.</p>{% endif %}
+  </div>
+
+  <div>
+    <div class="panel">
+      <h2>Bookings</h2>
+      {% if bookings %}
+      <table>
+        <tr><th>When</th><th>Status</th></tr>
+        {% for b in bookings %}
+        <tr>
+          <td>{{ b.start_time.strftime('%Y-%m-%d %H:%M UTC') if b.start_time else '—' }}</td>
+          <td><span class="badge {{ 'good' if b.status == 'confirmed' else 'muted' }}">{{ b.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}<p class="muted">No bookings.</p>{% endif %}
+    </div>
+
+    <div class="panel">
+      <h2>Drafts</h2>
+      {% if drafts %}
+      <table>
+        <tr><th>Touch</th><th>Score</th><th>Status</th><th>Created</th></tr>
+        {% for d in drafts %}
+        <tr>
+          <td>#{{ d.touch_number }}</td>
+          <td>{{ '%.2f' | format(d.judge_score) if d.judge_score is not none else '—' }}</td>
+          <td><span class="badge muted">{{ d.status }}</span></td>
+          <td class="muted">{{ d.created_at.strftime('%m-%d %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}<p class="muted">No drafts.</p>{% endif %}
+    </div>
+
+    <div class="panel">
+      <h2>Enrichment signals</h2>
+      <form method="post" action="/prospects/{{ prospect.id }}/signals">
+        <textarea name="signals_json" class="mono" style="min-height:160px">{{ prospect.signals | tojson(indent=2) }}</textarea>
+        <div style="margin-top:8px"><button class="secondary">Save signals</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

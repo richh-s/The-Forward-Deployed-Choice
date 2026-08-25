@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}{{ campaign.name }}{% endblock %}
+{% block content %}
+<div class="panel">
+  <div class="row" style="justify-content:space-between">
+    <h2 style="margin:0">{{ campaign.name }}
+      <span class="badge {{ 'good' if campaign.status == 'active' else 'muted' }}">{{ campaign.status }}</span>
+    </h2>
+    <div class="row">
+      {% if campaign.status != 'active' %}
+      <form class="inline" method="post" action="/campaigns/{{ campaign.id }}/status">
+        <input type="hidden" name="status" value="active"><button>Activate</button>
+      </form>
+      {% else %}
+      <form class="inline" method="post" action="/campaigns/{{ campaign.id }}/status">
+        <input type="hidden" name="status" value="paused"><button class="secondary">Pause</button>
+      </form>
+      {% endif %}
+      <form class="inline" method="post" action="/campaigns/{{ campaign.id }}/status">
+        <input type="hidden" name="status" value="completed"><button class="secondary">Complete</button>
+      </form>
+    </div>
+  </div>
+  <table style="margin-top:12px">
+    <tr>{% for s in stages %}<th>{{ s.replace('_',' ') }}</th>{% endfor %}</tr>
+    <tr>{% for s in stages %}<td>{{ stage_counts.get(s, 0) }}</td>{% endfor %}</tr>
+  </table>
+</div>
+
+<div class="grid cols-2">
+  <div class="panel">
+    <h2>Import prospects (CSV)</h2>
+    <p class="muted">Columns: <span class="mono">email</span> (required),
+      <span class="mono">name, company, title, phone, signals</span>
+      (signals = JSON object of enrichment signals with confidence levels).</p>
+    <form method="post" action="/campaigns/{{ campaign.id }}/upload" enctype="multipart/form-data">
+      <input type="file" name="file" accept=".csv" required>
+      <div style="margin-top:10px"><button>Import</button></div>
+    </form>
+  </div>
+  <div class="panel">
+    <h2>Campaign settings</h2>
+    <form method="post" action="/campaigns/{{ campaign.id }}/settings">
+      <div class="grid cols-2">
+        <div><label>Daily cap</label>
+          <input type="number" name="daily_cap" value="{{ campaign.daily_cap }}" min="1" max="500"></div>
+        <div><label>Auto-approve score (0–1)</label>
+          <input type="number" step="0.05" name="auto_approve_score" value="{{ campaign.auto_approve_score }}"></div>
+        <div><label>Send window start hour</label>
+          <input type="number" name="send_window_start_hour" value="{{ campaign.send_window_start_hour }}" min="0" max="23"></div>
+        <div><label>Send window end hour</label>
+          <input type="number" name="send_window_end_hour" value="{{ campaign.send_window_end_hour }}" min="1" max="24"></div>
+      </div>
+      <label>Timezone (IANA, e.g. Africa/Nairobi)</label>
+      <input name="timezone" value="{{ campaign.timezone }}">
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" name="require_approval" value="true"
+          {{ 'checked' if campaign.require_approval }} style="width:auto">
+        Require human approval of every draft
+      </label>
+      <label>Campaign angle (guides the composer)</label>
+      <input name="angle" value="{{ campaign.playbook.get('angle', '') }}">
+      <label>Follow-up sequence (JSON: [{"day_offset": 3, "angle": "..."}])</label>
+      <textarea name="sequence_json" class="mono">{{ campaign.sequence | tojson }}</textarea>
+      <div style="margin-top:10px"><button>Save settings</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Prospects</h2>
+  {% if prospects %}
+  <table>
+    <tr><th>Name</th><th>Company</th><th>Email</th><th>Stage</th><th>Confidence</th><th>Touches</th></tr>
+    {% for p in prospects %}
+    <tr>
+      <td><a href="/prospects/{{ p.id }}">{{ p.name or '—' }}</a></td>
+      <td>{{ p.company or '—' }}</td>
+      <td class="mono">{{ p.email }}</td>
+      <td><span class="badge">{{ p.stage }}</span></td>
+      <td>{{ '%.2f' | format(p.avg_confidence) if p.avg_confidence is not none else '—' }}</td>
+      <td>{{ p.touch_count }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">No prospects yet — import a CSV above.</p>{% endif %}
+</div>
+{% endblock %}

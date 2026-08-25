@@ -1,0 +1,165 @@
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --border: #e3e6ea;
+  --text: #1c2430;
+  --muted: #66707d;
+  --accent: #2456d6;
+  --accent-soft: #e8eefb;
+  --good: #1e8e4e;
+  --warn: #b7791f;
+  --bad: #c53030;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+nav {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 24px;
+  height: 52px;
+}
+nav .brand { font-weight: 700; margin-right: 24px; color: var(--text); }
+nav a.navlink {
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+nav a.navlink.active, nav a.navlink:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  text-decoration: none;
+}
+nav .spacer { flex: 1; }
+nav form { margin: 0; }
+
+.container { max-width: 1080px; margin: 24px auto; padding: 0 24px; }
+.banner {
+  background: var(--accent-soft);
+  border: 1px solid #c8d6f5;
+  color: #1c3d8f;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.banner.warn { background: #fdf3e2; border-color: #f0d9ac; color: #7a5410; }
+.banner.bad { background: #fdeaea; border-color: #f2c4c4; color: #7c1d1d; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+}
+.panel h2 { margin: 0 0 12px; font-size: 16px; }
+.panel h3 { margin: 16px 0 8px; font-size: 14px; }
+
+.grid { display: grid; gap: 16px; }
+.grid.cols-2 { grid-template-columns: 1fr 1fr; }
+.grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 800px) { .grid.cols-2, .grid.cols-3 { grid-template-columns: 1fr; } }
+
+.stat { text-align: center; padding: 10px 4px; }
+.stat .value { font-size: 26px; font-weight: 700; }
+.stat .label { color: var(--muted); font-size: 12px; }
+
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.badge.good { background: #e3f5eb; color: var(--good); }
+.badge.warn { background: #fdf3e2; color: var(--warn); }
+.badge.bad { background: #fdeaea; color: var(--bad); }
+.badge.muted { background: #eef0f3; color: var(--muted); }
+
+button, .btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+button.secondary, .btn.secondary {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+button.danger { background: var(--bad); }
+button:hover { filter: brightness(1.06); }
+
+input, textarea, select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 13px;
+  background: #fff;
+  color: var(--text);
+}
+textarea { min-height: 80px; resize: vertical; }
+label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+form.inline { display: inline; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+.timeline-item {
+  border-left: 3px solid var(--border);
+  padding: 6px 0 6px 14px;
+  margin-left: 6px;
+}
+.timeline-item.out { border-left-color: var(--accent); }
+.timeline-item.in { border-left-color: var(--good); }
+.timeline-item .meta { font-size: 12px; color: var(--muted); }
+.timeline-item pre {
+  white-space: pre-wrap;
+  font-family: inherit;
+  margin: 4px 0 0;
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.funnel-bar {
+  height: 22px;
+  background: var(--accent);
+  border-radius: 4px;
+  min-width: 2px;
+}
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.muted { color: var(--muted); }
+.auth-card { max-width: 400px; margin: 90px auto; }
+details summary { cursor: pointer; color: var(--accent); }
