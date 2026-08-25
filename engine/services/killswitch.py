@@ -1,0 +1,135 @@
+"""Kill-switch: computes rolling-window health metrics per workspace and
+auto-pauses outbound when any threshold is breached.
+
+Implements the policy that previously existed only in the README: metrics over
+a rolling window; a breach pauses the workspace and records why; a human must
+review and resume from Settings.
+"""
+import logging
+from datetime import timedelta
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from engine.config import get_settings
+from engine.models import AuditLog, Message, Prospect, Suppression, Workspace, utcnow
+
+logger = logging.getLogger(__name__)
+
+
+async def compute_metrics(db: AsyncSession, workspace: Workspace) -> dict:
+    settings = get_settings()
+    since = utcnow() - timedelta(days=settings.killswitch_window_days)
+
+    async def _count(*conds) -> int:
+        row = await db.execute(
+            select(func.count()).select_from(Message).where(
+                Message.workspace_id == workspace.id,
+                Message.created_at >= since,
+                *conds,
+            )
+        )
+        return int(row.scalar_one())
+
+    emails_out = await _count(Message.channel == "email", Message.direction == "out")
+    sms_out = await _count(Message.channel == "sms", Message.direction == "out")
+    bounced = await _count(
+        Message.channel == "email", Message.status.in_(["bounced", "complained"])
+    )
+    opt_outs = int((await db.execute(
+        select(func.count()).select_from(Suppression).where(
+            Suppression.workspace_id == workspace.id,
+            Suppression.reason == "opt_out",
+            Suppression.created_at >= since,
+        )
+    )).scalar_one())
+    llm_cost = float((await db.execute(
+        select(func.coalesce(func.sum(Message.cost_usd), 0.0)).where(
+            Message.workspace_id == workspace.id, Message.created_at >= since
+        )
+    )).scalar_one())
+    qualified = int((await db.execute(
+        select(func.count()).select_from(Prospect).where(
+            Prospect.workspace_id == workspace.id,
+            Prospect.stage.in_(["warm", "booked"]),
+            Prospect.updated_at >= since,
+        )
+    )).scalar_one())
+
+    total_out = emails_out + sms_out
+    return {
+        "window_days": settings.killswitch_window_days,
+        "emails_out": emails_out,
+        "sms_out": sms_out,
+        "bounce_rate": (bounced / emails_out) if emails_out else 0.0,
+        "opt_out_rate": (opt_outs / total_out) if total_out else 0.0,
+        "qualified_leads": qualified,
+        "llm_cost_usd": round(llm_cost, 4),
+        "cost_per_qualified_lead": (llm_cost / qualified) if qualified else 0.0,
+    }
+
+
+def _thresholds(workspace: Workspace) -> dict:
+    settings = get_settings()
+    overrides = workspace.killswitch or {}
+    return {
+        "opt_out_rate": float(
+            overrides.get("opt_out_rate", settings.killswitch_opt_out_rate)
+        ),
+        "bounce_rate": float(
+            overrides.get("bounce_rate", settings.killswitch_bounce_rate)
+        ),
+        "cost_per_qualified_lead": float(
+            overrides.get(
+                "cost_per_qualified_lead",
+                settings.killswitch_cost_per_qualified_lead_usd,
+            )
+        ),
+    }
+
+
+# Rate thresholds are meaningless on a handful of sends; require a floor of
+# activity before a breach can trip the switch.
+MIN_SENDS_FOR_RATES = 20
+
+
+async def evaluate_killswitch(db: AsyncSession, workspace: Workspace) -> list[str]:
+    """Check thresholds; pause the workspace on breach. Returns breach list."""
+    metrics = await compute_metrics(db, workspace)
+    thresholds = _thresholds(workspace)
+    breaches: list[str] = []
+
+    total_out = metrics["emails_out"] + metrics["sms_out"]
+    if total_out >= MIN_SENDS_FOR_RATES:
+        if metrics["opt_out_rate"] > thresholds["opt_out_rate"]:
+            breaches.append(
+                f"opt_out_rate {metrics['opt_out_rate']:.1%} > "
+                f"{thresholds['opt_out_rate']:.1%}"
+            )
+        if metrics["bounce_rate"] > thresholds["bounce_rate"]:
+            breaches.append(
+                f"bounce_rate {metrics['bounce_rate']:.1%} > "
+                f"{thresholds['bounce_rate']:.1%}"
+            )
+    if metrics["qualified_leads"] > 0 and (
+        metrics["cost_per_qualified_lead"] > thresholds["cost_per_qualified_lead"]
+    ):
+        breaches.append(
+            f"cost_per_qualified_lead ${metrics['cost_per_qualified_lead']:.2f} > "
+            f"${thresholds['cost_per_qualified_lead']:.2f}"
+        )
+
+    if breaches and not workspace.outbound_paused:
+        workspace.outbound_paused = True
+        workspace.pause_reason = "Kill-switch: " + "; ".join(breaches)
+        db.add(
+            AuditLog(
+                workspace_id=workspace.id,
+                action="killswitch_pause",
+                detail={"breaches": breaches, "metrics": metrics},
+            )
+        )
+        logger.warning(
+            "KILL-SWITCH paused workspace %s: %s", workspace.id, breaches
+        )
+    return breaches
