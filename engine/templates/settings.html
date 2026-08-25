@@ -84,6 +84,39 @@
 </div>
 
 <div class="panel">
+  <h2>Models</h2>
+  <p class="muted">Choose the model for each role. Leave blank to use the
+    platform default (shown as the placeholder). Prefix with
+    <span class="mono">local:</span> to route a role to your self-hosted
+    models — e.g. <span class="mono">local:gemma-4-26b</span>.</p>
+  <p>
+    Self-hosted endpoint:
+    {% if local_llm_configured %}
+      <span class="badge good">connected</span>
+      <span class="mono">{{ local_llm_base_url }}</span>
+    {% else %}
+      <span class="badge muted">not configured</span>
+      — set <span class="mono">LOCAL_LLM_BASE_URL</span> in the environment to
+      enable <span class="mono">local:</span> models.
+    {% endif %}
+  </p>
+  <form method="post" action="/settings/models">
+    <div class="grid cols-3">
+      <div><label>Compose model</label>
+        <input name="compose_model" value="{{ workspace.llm_config.get('compose', '') }}"
+          placeholder="{{ llm_defaults.compose }}"></div>
+      <div><label>Reply model</label>
+        <input name="reply_model" value="{{ workspace.llm_config.get('reply', '') }}"
+          placeholder="{{ llm_defaults.reply }}"></div>
+      <div><label>Judge model</label>
+        <input name="judge_model" value="{{ workspace.llm_config.get('judge', '') }}"
+          placeholder="{{ llm_defaults.judge }}"></div>
+    </div>
+    <div style="margin-top:10px"><button>Save models</button></div>
+  </form>
+</div>
+
+<div class="panel">
   <h2>Provider credentials</h2>
   <p class="muted">Stored encrypted. Configured:
     {% for p in configured %}<span class="badge good">{{ p }}</span>{% else %}

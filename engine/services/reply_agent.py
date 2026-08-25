@@ -9,7 +9,6 @@ prospects, and escalates to a human whenever it is out of its depth.
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from engine.config import get_settings
 from engine.models import Message, Prospect, Workspace
 from engine.services import llm
 from engine.services.booking import booking_url_for
@@ -108,7 +107,6 @@ async def handle_inbound(
 ) -> dict:
     """Classify + draft a reply to an inbound message.
     Returns the REPLY_SCHEMA dict plus 'cost_usd'."""
-    settings = get_settings()
     pb = workspace.playbook or {}
     playbook_facts = "\n\n".join(
         f"## {k}\n{v}"
@@ -135,7 +133,7 @@ async def handle_inbound(
     result = await llm.complete(
         db,
         workspace.id,
-        model=settings.reply_model,
+        model=llm.model_for(workspace, "reply"),
         system=system,
         messages=messages,
         max_tokens=1024,

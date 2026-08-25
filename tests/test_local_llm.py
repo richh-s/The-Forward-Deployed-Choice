@@ -143,3 +143,35 @@ def test_extract_json_variants():
     assert llm.extract_json('Here you go: {"a": 1}') == {"a": 1}
     with pytest.raises(ValueError):
         llm.extract_json("no json here")
+
+
+async def test_model_for_resolves_workspace_override_then_default():
+    from engine.config import get_settings
+    from engine.services.llm import model_for
+
+    defaults = get_settings()
+    ws_default = type("W", (), {"llm_config": {}})()
+    assert model_for(ws_default, "judge") == defaults.judge_model
+    assert model_for(ws_default, "compose") == defaults.compose_model
+
+    ws_local = type("W", (), {"llm_config": {"judge": "local:gemma-4-26b"}})()
+    assert model_for(ws_local, "judge") == "local:gemma-4-26b"
+    # unset roles still fall back to the platform default
+    assert model_for(ws_local, "reply") == defaults.reply_model
+
+
+async def test_settings_models_route_persists_config(client):
+    from engine.db import db_session
+    from engine.models import Workspace
+    from tests.conftest import login, seed_workspace
+
+    seed = await seed_workspace()
+    await login(client, seed["email"])
+    resp = await client.post(
+        "/settings/models",
+        data={"judge_model": "local:gemma-4-26b", "compose_model": "", "reply_model": ""},
+    )
+    assert resp.status_code == 303
+    async with db_session() as db:
+        ws = await db.get(Workspace, seed["workspace_id"])
+        assert ws.llm_config == {"judge": "local:gemma-4-26b"}

@@ -267,8 +267,14 @@ async def settings_page(
     db: AsyncSession = Depends(get_db),
 ):
     providers = await configured_providers(db, auth.workspace.id)
-    base_url = get_settings().base_url
+    settings = get_settings()
+    base_url = settings.base_url
     slug = auth.workspace.slug
+    llm_defaults = {
+        "compose": settings.compose_model,
+        "reply": settings.reply_model,
+        "judge": settings.judge_model,
+    }
     webhook_urls = {
         "Resend": f"{base_url}/webhooks/{slug}/resend",
         "Cal.com": f"{base_url}/webhooks/{slug}/calcom",
@@ -282,6 +288,9 @@ async def settings_page(
             provider_fields=PROVIDER_FIELDS,
             configured=providers,
             webhook_urls=webhook_urls,
+            llm_defaults=llm_defaults,
+            local_llm_configured=bool(settings.local_llm_base_url),
+            local_llm_base_url=settings.local_llm_base_url,
             welcome=request.query_params.get("welcome", ""),
         ),
     )

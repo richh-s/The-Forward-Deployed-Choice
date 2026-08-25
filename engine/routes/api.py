@@ -382,6 +382,30 @@ async def update_playbook(
     return _redirect("/settings", "Playbook saved")
 
 
+@router.post("/settings/models")
+async def update_models(
+    compose_model: str = Form(""),
+    reply_model: str = Form(""),
+    judge_model: str = Form(""),
+    auth: AuthContext = Depends(current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-workspace model overrides by role. Blank = platform default.
+    A 'local:' prefix routes the role to the self-hosted LOCAL_LLM_BASE_URL."""
+    cfg = {
+        "compose": compose_model.strip(),
+        "reply": reply_model.strip(),
+        "judge": judge_model.strip(),
+    }
+    auth.workspace.llm_config = {k: v for k, v in cfg.items() if v}
+    db.add(auth.workspace)
+    db.add(AuditLog(
+        workspace_id=auth.workspace.id, user_id=auth.user.id,
+        action="models_updated", detail=auth.workspace.llm_config,
+    ))
+    return _redirect("/settings", "Model configuration saved")
+
+
 @router.post("/settings/credentials/{provider}")
 async def update_credentials(
     provider: str,

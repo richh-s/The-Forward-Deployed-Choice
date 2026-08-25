@@ -75,6 +75,10 @@ class Workspace(Base, TimestampMixin):
     # Kill-switch threshold overrides (fall back to platform defaults)
     killswitch: Mapped[dict] = mapped_column(JSON, default=dict)
 
+    # Per-workspace model overrides by role: {"compose": "...", "reply":
+    # "...", "judge": "local:gemma-4-26b"}. Empty → platform env defaults.
+    llm_config: Mapped[dict] = mapped_column(JSON, default=dict)
+
     users: Mapped[list["User"]] = relationship(back_populates="workspace")
 
 

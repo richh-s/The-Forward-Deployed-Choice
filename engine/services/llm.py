@@ -56,6 +56,23 @@ def cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
     return input_tokens * inp / 1e6 + output_tokens * outp / 1e6
 
 
+def model_for(workspace, role: str) -> str:
+    """Resolve the model for a pipeline role ("compose" | "reply" | "judge").
+
+    A per-workspace override (Settings → Models) wins over the platform env
+    default, so one deployment can run e.g. a local judge for tenant A and a
+    Claude judge for tenant B. A `local:` prefix routes to LOCAL_LLM_BASE_URL.
+    """
+    settings = get_settings()
+    default = {
+        "compose": settings.compose_model,
+        "reply": settings.reply_model,
+        "judge": settings.judge_model,
+    }[role]
+    override = (getattr(workspace, "llm_config", None) or {}).get(role)
+    return override or default
+
+
 class LLMResult:
     def __init__(self, text: str, model: str, input_tokens: int, output_tokens: int):
         self.text = text

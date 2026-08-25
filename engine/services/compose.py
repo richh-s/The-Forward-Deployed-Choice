@@ -9,7 +9,6 @@ import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from engine.config import get_settings
 from engine.models import Campaign, Prospect, Workspace
 from engine.services import llm
 
@@ -86,7 +85,6 @@ async def compose_outreach(
     angle: str = "",
 ) -> tuple[dict, float]:
     """Compose one outreach email. Returns (draft fields, llm cost in USD)."""
-    settings = get_settings()
     avg_conf = compute_avg_confidence(prospect.signals or {})
     mode = "ASSERTION" if avg_conf >= ASSERTION_THRESHOLD else "INQUIRY"
 
@@ -115,7 +113,7 @@ Signal brief:
     result = await llm.complete(
         db,
         workspace.id,
-        model=settings.compose_model,
+        model=llm.model_for(workspace, "compose"),
         system=build_system_prompt(workspace, campaign),
         messages=[{"role": "user", "content": user_prompt}],
         max_tokens=2048,

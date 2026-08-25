@@ -9,7 +9,6 @@ import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from engine.config import get_settings
 from engine.models import Workspace
 from engine.services import llm
 
@@ -86,7 +85,6 @@ async def judge_draft(
     signals: dict,
 ) -> tuple[float, str, float]:
     """Score a draft. Returns (composite score 0..1, feedback, llm cost usd)."""
-    settings = get_settings()
     user_prompt = f"""Signal brief the email was composed from:
 {json.dumps(signals, indent=2)}
 
@@ -100,7 +98,7 @@ Subject: {subject}
     result = await llm.complete(
         db,
         workspace.id,
-        model=settings.judge_model,
+        model=llm.model_for(workspace, "judge"),
         system=JUDGE_SYSTEM,
         messages=[{"role": "user", "content": user_prompt}],
         max_tokens=1024,
