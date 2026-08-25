@@ -1,4 +1,45 @@
-# The Forward-Deployed Choice — Tenacious Consulting Conversion Engine
+# Conversion Engine
+
+**A multi-tenant AI outbound conversion platform**, grown out of the
+10Academy Forward-Deployed Challenge (Tenacious Consulting scenario) into a
+production application.
+
+What it does: import prospects with enrichment signals → Claude composes
+signal-grounded outreach (assertion vs inquiry mode gated by signal
+confidence) → an LLM judge scores every draft (fabrication is disqualifying)
+→ human approval queue (or auto-approve above a score threshold) → send via
+Resend with compliant unsubscribe → a conversational reply agent answers
+questions strictly from the workspace playbook, hands warm prospects a
+personalized Cal.com booking link, and escalates what it can't answer →
+bookings and contacts sync to HubSpot. Durable suppression lists, daily send
+caps, a metrics-driven kill-switch, and a sink mode that keeps all outbound
+away from real prospects until go-live sign-off.
+
+## Product quickstart
+
+```bash
+python3.11 -m venv .venv && source .venv/bin/activate   # Python 3.10+
+pip install -r requirements.txt
+cp .env.example .env    # set ANTHROPIC_API_KEY, APP_SECRET_KEY, sink addresses
+python scripts/seed_demo_workspace.py --email you@example.com --password <pw>
+uvicorn server:app --reload
+# open http://localhost:8000 — or start empty and use the /setup wizard
+```
+
+Run the test suite: `pip install pytest pytest-asyncio ruff && pytest tests/ -q`
+
+**→ Full architecture, security/compliance model, deployment runbook, go-live
+checklist, and operations guide: [PRODUCT.md](PRODUCT.md)**
+
+The product lives in [engine/](engine/) (+ `server.py`, `migrations/`,
+`tests/`, `render.yaml`, CI in `.github/workflows/`). Everything below this
+line is the original research and challenge coursework that the product's
+mechanisms (confidence gating, judge critic, kill-switch policy) were
+validated in — kept intact for reference.
+
+---
+
+# The Forward-Deployed Choice — research & challenge submission
 
 Final submission for the 10Academy Forward-Deployed Challenge.
 **Scenario: Tenacious Consulting and Outsourcing only.**
@@ -81,11 +122,8 @@ Rollback: two consecutive days above any threshold → all outbound routes to st
 ## Setup
 
 ```bash
-# 1. Install Python dependencies
-pip install -r requirements.txt
-
-# Key packages: anthropic langfuse resend requests fastapi uvicorn
-#   reportlab python-dotenv playwright openai trl unsloth datasets transformers
+# 1. Install research dependencies (product deps + eval/probe/training extras)
+pip install -r requirements-research.txt
 playwright install chromium
 
 # 2. Copy and fill env vars
@@ -118,8 +156,8 @@ python mechanism/statistical_test.py
 # 10. Validate evidence graph before submitting
 python eval/validate_evidence_graph.py evidence_graph.json
 
-# 11. SMS handler (development server)
-uvicorn agent.sms_handler:app --reload --port 8000
+# 11. Webhook/SMS handling now lives in the product server
+uvicorn server:app --reload --port 8000
 ```
 
 ## Week 11 — Tenacious-Bench v0.1 (Path B: Preference-Tuned Judge)
@@ -286,6 +324,13 @@ Run `python scripts/build_evidence_graph.py` to populate values from generated f
 ---
 
 ## Known Limitations and Next Steps
+
+> **2026-08 update:** the infrastructure and code-architecture limitations
+> below described the original challenge prototype and are resolved in the
+> product (`engine/` — Postgres persistence, signature-verified webhooks,
+> job queue with retries, real Cal.com booking loop, durable opt-outs,
+> multi-tenant dashboard; see [PRODUCT.md](PRODUCT.md)). The **Data & Signals**
+> items still apply: live enrichment remains an extension point.
 
 A successor engineer picking up this repo should be aware of the following:
 
