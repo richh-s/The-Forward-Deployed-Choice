@@ -22,10 +22,69 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio ruff
       - name: Lint
-        run: ruff check engine tests server.py
+        run: ruff check engine tests server.py worker.py
       - name: Import smoke test
         run: python -c "from engine.app import create_app; create_app()"
-      - name: Migration check (fresh database)
+      - name: Migration check (fresh SQLite database)
         run: DATABASE_URL="sqlite:///./ci-migrate.db" alembic upgrade head
-      - name: Tests
+      - name: Tests (SQLite)
         run: pytest tests/ -q
+
+  # The production dialect: migrations, model-drift check, and the full
+  # suite against real Postgres — the paths SQLite cannot exercise.
+  test-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: engine
+          POSTGRES_PASSWORD: engine
+          POSTGRES_DB: engine
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U engine"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Deliberately the driverless form Render injects — verifies the
+      # app and Alembic both normalize it.
+      DATABASE_URL: postgresql://engine:engine@localhost:5432/engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+      - name: Migrations against Postgres
+        run: alembic upgrade head
+      - name: Model drift check (models must match migration head)
+        run: alembic check
+      - name: Boot smoke test against Postgres
+        run: python -c "from engine.app import create_app; create_app()"
+      - name: Tests (Postgres)
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://engine:engine@localhost:5432/engine
+        run: pytest tests/ -q
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Dependency vulnerability audit
+        # Surfaces known CVEs in pinned deps; kept non-blocking so a CVE
+        # published overnight doesn't block unrelated PRs — triage the
+        # warning, don't ignore it.
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt

@@ -1,19 +1,29 @@
 databases:
   - name: engine-db
-    plan: basic-256mb
+    plan: basic-1gb        # 256mb fills fast — message bodies are stored per tenant
     databaseName: engine
     user: engine
 
 services:
+  # Web: dashboard + webhooks. No worker/scheduler in this process — those
+  # run in the dedicated worker service below so a slow LLM job can never
+  # stall webhook handling, and the web tier can scale horizontally.
   - type: web
     name: conversion-engine
     runtime: python
-    plan: starter  # free tier spins down and pauses the worker/scheduler
-    buildCommand: pip install -r requirements.txt
+    plan: starter          # free tier spins down; never use it in production
+    buildCommand: pip install -r requirements.txt -c requirements.lock
     preDeployCommand: alembic upgrade head
-    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    # --proxy-headers so request.url reflects the original https scheme
+    # (Twilio signature verification signs the public URL). Render's proxy
+    # is the only ingress, so trusting forwarded headers is safe here.
+    startCommand: >-
+      uvicorn server:app --host 0.0.0.0 --port $PORT
+      --proxy-headers --forwarded-allow-ips='*'
     healthCheckPath: /health
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
       - key: DATABASE_URL
         fromDatabase:
           name: engine-db
@@ -22,12 +32,59 @@ services:
         value: production
       - key: APP_SECRET_KEY
         generateValue: true
+      - key: SETUP_TOKEN
+        generateValue: true   # required by /setup — read it from the dashboard
       - key: BASE_URL
-        sync: false          # set to the public URL after first deploy
+        sync: false           # set to the public https URL after first deploy
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: SENTRY_DSN
+        sync: false           # optional but strongly recommended
+      - key: METRICS_TOKEN
+        generateValue: true
       - key: LIVE_MODE
-        value: "false"       # flip to "true" only after go-live sign-off
+        value: "false"        # flip to "true" only after go-live sign-off
+      - key: SINK_EMAIL
+        sync: false
+      - key: SINK_PHONE
+        sync: false
+      - key: RUN_WORKER
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+
+  # Worker: job queue + scheduler. Safe to scale; job claiming uses
+  # SKIP LOCKED and the scheduler takes an advisory lock per pass.
+  - type: worker
+    name: conversion-engine-worker
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt -c requirements.lock
+    startCommand: python -m worker
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: DATABASE_URL
+        fromDatabase:
+          name: engine-db
+          property: connectionString
+      - key: ENVIRONMENT
+        value: production
+      - key: APP_SECRET_KEY
+        fromService:
+          type: web
+          name: conversion-engine
+          envVarKey: APP_SECRET_KEY
+      - key: BASE_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: LIVE_MODE
+        value: "false"
       - key: SINK_EMAIL
         sync: false
       - key: SINK_PHONE
@@ -36,3 +93,5 @@ services:
         value: "true"
       - key: LOG_LEVEL
         value: INFO
+      - key: LOG_FORMAT
+        value: json

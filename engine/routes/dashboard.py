@@ -14,6 +14,7 @@ from engine.models import (
     Booking,
     Campaign,
     Draft,
+    Job,
     Message,
     Prospect,
 )
@@ -91,13 +92,12 @@ async def campaigns_page(
         .where(Campaign.workspace_id == auth.workspace.id)
         .order_by(Campaign.created_at.desc())
     )).scalars().all()
-    counts: dict[str, int] = {}
-    for c in campaigns:
-        counts[c.id] = int((await db.execute(
-            select(func.count()).select_from(Prospect).where(
-                Prospect.campaign_id == c.id
-            )
-        )).scalar_one())
+    count_rows = await db.execute(
+        select(Prospect.campaign_id, func.count())
+        .where(Prospect.workspace_id == auth.workspace.id)
+        .group_by(Prospect.campaign_id)
+    )
+    counts: dict[str, int] = {cid: int(n) for cid, n in count_rows.all() if cid}
     return templates.TemplateResponse(
         request, "campaigns.html",
         _ctx(request, auth, campaigns=campaigns, counts=counts),
@@ -257,6 +257,34 @@ async def analytics_page(
         request, "analytics.html",
         _ctx(request, auth, metrics=metrics, funnel=funnel,
              max_funnel=max([v for _, v in funnel] + [1])),
+    )
+
+
+@router.get("/jobs", response_class=HTMLResponse)
+async def jobs_page(
+    request: Request,
+    auth: AuthContext = Depends(current_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Queue health for this workspace: failing and dead jobs with their
+    errors, so a stuck pipeline is visible without psql access."""
+    ws_id = auth.workspace.id
+    status_rows = await db.execute(
+        select(Job.status, func.count())
+        .where(Job.workspace_id == ws_id)
+        .group_by(Job.status)
+    )
+    problem_jobs = (await db.execute(
+        select(Job)
+        .where(Job.workspace_id == ws_id, Job.status.in_(["failed", "dead"]))
+        .order_by(Job.updated_at.desc())
+        .limit(50)
+    )).scalars().all()
+    return templates.TemplateResponse(
+        request, "jobs.html",
+        _ctx(request, auth,
+             status_counts=dict(status_rows.all()),
+             problem_jobs=problem_jobs),
     )
 
 
