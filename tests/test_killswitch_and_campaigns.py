@@ -9,7 +9,7 @@ from engine.db import db_session
 from engine.models import Campaign, Job, Message, Prospect, Suppression, Workspace, utcnow
 from engine.services.killswitch import compute_metrics, evaluate_killswitch
 from engine.services.scheduler import run_scheduler_pass
-from tests.conftest import login, seed_workspace
+from tests.conftest import csrf_for, login, seed_workspace
 
 
 async def _add_outbound(db, ws_id, n, status="sent"):
@@ -71,6 +71,7 @@ async def test_csv_import(client: httpx.AsyncClient):
     )
     resp = await client.post(
         f"/campaigns/{seed['campaign_id']}/upload",
+        data={"csrf_token": csrf_for(client)},
         files={"file": ("prospects.csv", io.BytesIO(csv_content.encode()), "text/csv")},
     )
     assert resp.status_code == 303
@@ -87,7 +88,11 @@ async def test_csv_import(client: httpx.AsyncClient):
         assert bob.stage == "new"
 
 
-async def test_scheduler_enqueues_first_touches_within_cap():
+async def test_scheduler_daily_cap_is_per_day_not_per_tick():
+    """daily_cap must hold across scheduler ticks within the same day and
+    reset on the next day."""
+    from engine.models import DailyCounter
+
     seed = await seed_workspace()
     async with db_session() as db:
         campaign = await db.get(Campaign, seed["campaign_id"])
@@ -104,15 +109,27 @@ async def test_scheduler_enqueues_first_touches_within_cap():
             select(Job).where(Job.type == "compose_draft")
         )).scalars().all()
         assert len(jobs) == 1  # cap respected
-    # A second pass must not enqueue a duplicate for the same prospect.
+
+    # Same day, second tick: the cap already spent — nothing new.
     await run_scheduler_pass()
     async with db_session() as db:
         jobs = (await db.execute(
             select(Job).where(Job.type == "compose_draft")
         )).scalars().all()
-        assert len(jobs) == 2  # first prospect (claimed) + second prospect
+        assert len(jobs) == 1
+
+    # Roll the counter to yesterday — the next pass gets a fresh budget.
+    async with db_session() as db:
+        counter = (await db.execute(select(DailyCounter))).scalars().one()
+        counter.date = "2000-01-01"
+    await run_scheduler_pass()
+    async with db_session() as db:
+        jobs = (await db.execute(
+            select(Job).where(Job.type == "compose_draft")
+        )).scalars().all()
+        assert len(jobs) == 2
         keys = {j.idempotency_key for j in jobs}
-        assert len(keys) == 2
+        assert len(keys) == 2  # one per prospect, no duplicates
 
 
 async def test_scheduler_respects_send_window():

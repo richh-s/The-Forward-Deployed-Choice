@@ -74,6 +74,59 @@ async def test_unknown_job_type_fails_safely():
         assert "No handler" in job.last_error
 
 
+async def test_duplicate_enqueue_preserves_caller_transaction():
+    """A duplicate idempotency key must roll back only its SAVEPOINT — never
+    the caller's other writes (regression: sent emails were losing their
+    Message/state records on the 2nd+ touch)."""
+    from tests.conftest import seed_workspace
+
+    seed = await seed_workspace()
+    async with db_session() as db:
+        await enqueue(db, "test_ok", {}, idempotency_key="dup-key")
+    async with db_session() as db:
+        from engine.models import Suppression
+
+        # Work done before the duplicate enqueue...
+        db.add(Suppression(
+            workspace_id=seed["workspace_id"], channel="email",
+            address="keepme@x.test", reason="manual",
+        ))
+        await db.flush()
+        dup = await enqueue(db, "test_ok", {}, idempotency_key="dup-key")
+        assert dup is None
+    async with db_session() as db:
+        from engine.models import Suppression
+
+        rows = (await db.execute(
+            select(Suppression).where(Suppression.address == "keepme@x.test")
+        )).scalars().all()
+        assert rows, "duplicate enqueue rolled back the caller's writes"
+
+
+async def test_recover_stuck_jobs_respects_attempt_budget():
+    from datetime import timedelta
+
+    from engine.models import utcnow
+    from engine.queue import recover_stuck_jobs
+
+    async with db_session() as db:
+        fresh = await enqueue(db, "test_ok", {}, max_attempts=3)
+        spent = await enqueue(db, "test_ok", {}, max_attempts=1)
+        stale = utcnow() - timedelta(hours=1)
+        for j, attempts in ((fresh, 1), (spent, 1)):
+            j.status = "running"
+            j.attempts = attempts
+        fresh_id, spent_id = fresh.id, spent.id
+    async with db_session() as db:
+        from sqlalchemy import update
+
+        await db.execute(update(Job).values(updated_at=stale))
+    await recover_stuck_jobs(older_than_minutes=15)
+    async with db_session() as db:
+        assert (await db.get(Job, fresh_id)).status == "failed"   # retryable
+        assert (await db.get(Job, spent_id)).status == "dead"     # budget spent
+
+
 async def test_jobs_run_oldest_first():
     async with db_session() as db:
         await enqueue(db, "test_ok", {"o": 1})

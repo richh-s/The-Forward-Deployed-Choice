@@ -45,12 +45,28 @@ async def test_daily_cap_enforced(monkeypatch):
             await check_can_send(db, ws, "email", "c@example.com")
 
 
-async def test_unsubscribe_page(client: httpx.AsyncClient):
+async def test_unsubscribe_get_is_not_destructive(client: httpx.AsyncClient):
+    """Mail scanners prefetch GETs — only the POST may unsubscribe."""
     seed = await seed_workspace()
     async with db_session() as db:
         prospect = await db.get(Prospect, seed["prospect_id"])
         token = prospect.unsubscribe_token
     resp = await client.get(f"/u/{token}")
+    assert resp.status_code == 200 and "Unsubscribe" in resp.text
+    async with db_session() as db:
+        from sqlalchemy import select
+
+        assert not (await db.execute(select(Suppression))).scalars().all()
+        prospect = await db.get(Prospect, seed["prospect_id"])
+        assert prospect.stage != "opted_out"
+
+
+async def test_unsubscribe_post_suppresses(client: httpx.AsyncClient):
+    seed = await seed_workspace()
+    async with db_session() as db:
+        prospect = await db.get(Prospect, seed["prospect_id"])
+        token = prospect.unsubscribe_token
+    resp = await client.post(f"/u/{token}")  # RFC 8058 one-click / form POST
     assert resp.status_code == 200 and "unsubscribed" in resp.text
     async with db_session() as db:
         from sqlalchemy import select

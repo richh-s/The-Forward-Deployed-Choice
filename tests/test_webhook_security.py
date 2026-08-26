@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import json
+import time
 
 import httpx
 
@@ -49,13 +50,14 @@ async def test_resend_accepts_valid_signature_and_dedups(client: httpx.AsyncClie
     payload = json.dumps(
         {"type": "email.opened", "data": {"email_id": "em_1", "to": ["x@y.z"]}}
     ).encode()
-    to_sign = b"msg_1.1700000000." + payload
+    ts = str(int(time.time()))
+    to_sign = f"msg_1.{ts}.".encode() + payload
     sig = base64.b64encode(
         hmac.new(raw_key, to_sign, hashlib.sha256).digest()
     ).decode()
     headers = {
         "svix-id": "msg_1",
-        "svix-timestamp": "1700000000",
+        "svix-timestamp": ts,
         "svix-signature": f"v1,{sig}",
     }
     resp = await client.post("/webhooks/acme/resend", content=payload, headers=headers)
@@ -63,6 +65,31 @@ async def test_resend_accepts_valid_signature_and_dedups(client: httpx.AsyncClie
     # Replay is detected via the WebhookEvent ledger.
     resp = await client.post("/webhooks/acme/resend", content=payload, headers=headers)
     assert resp.json().get("duplicate") is True
+
+
+async def test_resend_stale_timestamp_rejected(client: httpx.AsyncClient):
+    """A correctly signed but old request is a replay — reject it."""
+    seed = await seed_workspace()
+    raw_key = b"1" * 32
+    async with db_session() as db:
+        await set_credentials(
+            db, seed["workspace_id"], "resend",
+            {
+                "api_key": "re_x",
+                "webhook_secret": "whsec_" + base64.b64encode(raw_key).decode(),
+            },
+        )
+    payload = b"{}"
+    ts = str(int(time.time()) - 3600)
+    sig = base64.b64encode(
+        hmac.new(raw_key, f"msg_2.{ts}.".encode() + payload, hashlib.sha256).digest()
+    ).decode()
+    resp = await client.post(
+        "/webhooks/acme/resend", content=payload,
+        headers={"svix-id": "msg_2", "svix-timestamp": ts,
+                 "svix-signature": f"v1,{sig}"},
+    )
+    assert resp.status_code == 401
 
 
 async def test_calcom_rejected_without_header(client: httpx.AsyncClient):

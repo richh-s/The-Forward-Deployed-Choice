@@ -9,7 +9,10 @@ import tempfile
 _TMPDIR = tempfile.mkdtemp(prefix="engine-tests-")
 os.environ.update(
     {
-        "DATABASE_URL": f"sqlite+aiosqlite:///{_TMPDIR}/test.db",
+        # TEST_DATABASE_URL lets CI point the suite at real Postgres.
+        "DATABASE_URL": os.environ.get(
+            "TEST_DATABASE_URL", f"sqlite+aiosqlite:///{_TMPDIR}/test.db"
+        ),
         "ENVIRONMENT": "development",
         "APP_SECRET_KEY": "test-secret-key-not-for-production",
         "LIVE_MODE": "false",
@@ -24,16 +27,17 @@ os.environ.update(
 import httpx  # noqa: E402
 import pytest  # noqa: E402
 
-from engine import models  # noqa: E402, F401
+from engine import models, ratelimit  # noqa: E402, F401
 from engine.app import create_app  # noqa: E402
 from engine.db import Base, db_session, dispose_engine, get_engine  # noqa: E402
 from engine.models import Campaign, Prospect, User, Workspace  # noqa: E402
-from engine.security import hash_password  # noqa: E402
+from engine.security import csrf_token_for, hash_password  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 async def fresh_db():
     """Blank schema per test."""
+    ratelimit.reset_all()
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -120,8 +124,32 @@ async def seed_workspace(
         }
 
 
-async def login(client: httpx.AsyncClient, email: str) -> None:
+def csrf_for(client: httpx.AsyncClient) -> str:
+    """CSRF token for the client's current session cookie."""
+    session_token = client.cookies.get("engine_session")
+    return csrf_token_for(session_token) if session_token else ""
+
+
+async def post(client: httpx.AsyncClient, url: str, data: dict | None = None, **kw):
+    """client.post with the CSRF token the dashboard forms would carry."""
+    data = dict(data or {})
+    data.setdefault("csrf_token", csrf_for(client))
+    return await client.post(url, data=data, **kw)
+
+
+async def prelogin_csrf(client: httpx.AsyncClient, page: str) -> str:
+    """GET a pre-login page (/login, /setup) to obtain its double-submit
+    CSRF cookie; returns the token to send in the form."""
+    await client.get(page)
+    return client.cookies.get("csrft", "")
+
+
+async def login(
+    client: httpx.AsyncClient, email: str, password: str = "correct-horse-battery"
+) -> None:
+    token = await prelogin_csrf(client, "/login")
     resp = await client.post(
-        "/login", data={"email": email, "password": "correct-horse-battery"}
+        "/login",
+        data={"email": email, "password": password, "csrf_token": token},
     )
     assert resp.status_code == 303 and resp.headers["location"] == "/", resp.text

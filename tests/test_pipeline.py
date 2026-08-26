@@ -12,7 +12,7 @@ from engine.models import Booking, Draft, Job, Message, Prospect
 from engine.queue import enqueue, process_one
 from engine.services.credentials import set_credentials
 from engine.services.llm import LLMResult
-from tests.conftest import login, seed_workspace
+from tests.conftest import login, post, seed_workspace
 
 COMPOSE_JSON = {
     "subject": "Question about Prospect Co's hiring plans",
@@ -109,7 +109,7 @@ async def test_auto_approve_sends_via_sink(client: httpx.AsyncClient):
     seed = await _seed_with_resend(require_approval=False)
     resend_calls = []
 
-    async def fake_resend(api_key, payload):
+    async def fake_resend(api_key, payload, idempotency_key=None):
         resend_calls.append(payload)
         return {"id": "re_msg_1"}
 
@@ -161,13 +161,13 @@ async def test_manual_approval_flow(client: httpx.AsyncClient):
     async with db_session() as db:
         draft = (await db.execute(select(Draft))).scalar_one()
         draft_id = draft.id
-    resp = await client.post(
-        f"/approvals/{draft_id}/approve",
+    resp = await post(
+        client, f"/approvals/{draft_id}/approve",
         data={"subject": "Edited subject", "body": "Edited body from a human."},
     )
     assert resp.status_code == 303
 
-    async def fake_resend(api_key, payload):
+    async def fake_resend(api_key, payload, idempotency_key=None):
         assert payload["subject"] == "Edited subject"
         return {"id": "re_msg_2"}
 
@@ -193,7 +193,7 @@ async def test_reject_prevents_send(client: httpx.AsyncClient):
     await login(client, seed["email"])
     async with db_session() as db:
         draft_id = (await db.execute(select(Draft))).scalar_one().id
-    await client.post(f"/approvals/{draft_id}/reject", data={"reason": "off-brand"})
+    await post(client, f"/approvals/{draft_id}/reject", data={"reason": "off-brand"})
     async with db_session() as db:
         draft = await db.get(Draft, draft_id)
         assert draft.status == "rejected"
@@ -235,7 +235,7 @@ async def test_warm_reply_sends_agent_response():
     }
     sent = []
 
-    async def fake_resend(api_key, payload):
+    async def fake_resend(api_key, payload, idempotency_key=None):
         sent.append(payload)
         return {"id": "re_msg_3"}
 
@@ -254,6 +254,79 @@ async def test_warm_reply_sends_agent_response():
     async with db_session() as db:
         prospect = await db.get(Prospect, seed["prospect_id"])
         assert prospect.stage == "warm"
+
+
+async def test_second_touch_send_is_fully_recorded():
+    """Regression: the 2nd touch's HubSpot enqueue used to collide on a
+    per-prospect idempotency key and roll back the whole send record."""
+    seed = await _seed_with_resend(require_approval=False)
+
+    async def fake_resend(api_key, payload, idempotency_key=None):
+        return {"id": f"re_{len(sent) + 1}"}
+
+    sent = []
+    for touch in (1, 2):
+        async with db_session() as db:
+            draft = Draft(
+                workspace_id=seed["workspace_id"],
+                prospect_id=seed["prospect_id"],
+                campaign_id=seed["campaign_id"],
+                subject=f"Touch {touch}",
+                body="Body",
+                status="approved",
+                touch_number=touch,
+            )
+            db.add(draft)
+            await db.flush()
+            await enqueue(db, "send_draft", {"draft_id": draft.id},
+                          idempotency_key=f"send_draft:{draft.id}")
+        with patch(
+            "engine.services.emailer._resend_send",
+            new=AsyncMock(side_effect=fake_resend),
+        ):
+            # Drain everything (the send plus the HubSpot sync it enqueues).
+            while await process_one():
+                pass
+        sent.append(touch)
+
+    async with db_session() as db:
+        messages = (await db.execute(
+            select(Message).where(Message.direction == "out")
+        )).scalars().all()
+        assert len(messages) == 2  # both sends recorded
+        prospect = await db.get(Prospect, seed["prospect_id"])
+        assert prospect.touch_count == 2
+        drafts = (await db.execute(select(Draft))).scalars().all()
+        assert all(d.status == "sent" for d in drafts)
+        hs_jobs = (await db.execute(
+            select(Job).where(Job.type == "sync_hubspot_contact")
+        )).scalars().all()
+        assert len(hs_jobs) == 2  # one per touch — key is per-draft now
+
+
+async def test_booking_metadata_cannot_reach_other_workspace():
+    """Cal.com metadata is attacker-controllable — a prospect_id from
+    another workspace must be ignored."""
+    from engine.models import Workspace
+    from engine.services.booking import record_booking_event
+
+    seed_a = await seed_workspace(slug="alpha", admin_email="a@alpha.test")
+    seed_b = await seed_workspace(slug="beta", admin_email="b@beta.test")
+    async with db_session() as db:
+        ws_a = await db.get(Workspace, seed_a["workspace_id"])
+        booking = await record_booking_event(
+            db, ws_a, "BOOKING_CREATED",
+            {
+                "uid": "bk_evil",
+                "startTime": "2026-09-01T14:00:00Z",
+                "metadata": {"prospect_id": seed_b["prospect_id"]},
+                "attendees": [],
+            },
+        )
+        assert booking is not None and booking.prospect_id is None
+    async with db_session() as db:
+        victim = await db.get(Prospect, seed_b["prospect_id"])
+        assert victim.stage != "booked"  # untouched
 
 
 async def test_booking_webhook_closes_loop(client: httpx.AsyncClient):

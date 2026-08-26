@@ -122,17 +122,22 @@ tailnet — set it empty in a non-tailnet deploy to keep every role on Claude.
 
 | Concern | Implementation |
 |---|---|
-| Auth | DB-backed sessions (only the token hash is stored), bcrypt passwords, admin/operator roles, one-shot `/setup` bootstrap |
-| Tenancy | `workspace_id` on every row; ownership re-checked on every mutating route |
-| Webhooks | Fail closed. Svix (Resend), HMAC-SHA256 (Cal.com), Twilio request signing, secret URL token (Africa's Talking — it does not sign). No secret configured → requests rejected |
-| Idempotency | `WebhookEvent` unique ledger per (provider, event id); job `idempotency_key` unique index; provider retries and double-clicks cannot double-send |
-| Suppression | Durable DB table per (workspace, channel, address); written on STOP, unsubscribe click, bounce, complaint, cold intent, manual action; checked before **every** send. STOP confirmations bypass policy checks as required by carrier rules |
-| Unsubscribe | Every email carries `List-Unsubscribe` + one-click POST + a visible link to `/u/{token}` |
+| Auth | DB-backed sessions (only the token hash is stored; sliding renewal, server-side expiry), bcrypt passwords hashed off the event loop, timing-equalized login (no user-enumeration oracle), login rate limiting (per IP and per IP+account), admin/operator roles, password change with revoke-all-sessions |
+| Bootstrap | One-shot `/setup`, additionally gated by a deploy-time `SETUP_TOKEN` in production and serialized with an advisory lock (no first-visitor-becomes-admin, no double-bootstrap race) |
+| CSRF | Every state-changing dashboard route requires a CSRF token (session-derived HMAC; double-submit cookie for the pre-login forms), enforced router-wide. Webhooks are signature-verified and cookie-free; the RFC 8058 unsubscribe POST is deliberately exempt |
+| Headers | `X-Frame-Options: DENY`, CSP with `frame-ancestors 'none'`, `X-Content-Type-Options`, `Referrer-Policy`, HSTS in production |
+| Tenancy | `workspace_id` on every row; ownership re-checked on every mutating route; webhook-supplied ids (Cal.com metadata) validated against the workspace; job payload workspace/prospect pairs cross-checked |
+| Webhooks | Fail closed. Svix (Resend, with ±5 min timestamp tolerance against replay), HMAC-SHA256 (Cal.com), Twilio request signing, secret URL token (Africa's Talking — it does not sign; missing event ids fall back to a content fingerprint for dedup). No secret configured → requests rejected |
+| Idempotency | `WebhookEvent` unique ledger per (provider, event id); job `idempotency_key` unique index; Resend sends carry an `Idempotency-Key` header so even a retry after a post-send DB failure cannot deliver twice. Duplicate inserts are absorbed in SAVEPOINTs — they never roll back the surrounding transaction |
+| Suppression | Durable DB table per (workspace, channel, address); written on STOP, unsubscribe, bounce, complaint, cold intent, manual action; checked before **every** send *and re-checked at the last instant before the provider call*. STOP confirmations bypass policy checks as required by carrier rules |
+| Unsubscribe | Every email carries `List-Unsubscribe` + one-click POST + a visible link to `/u/{token}`. The GET renders a confirmation page only (mail scanners prefetch links); the POST performs the write. Rate-limited |
 | Sink mode | `LIVE_MODE=false` (default) reroutes all outbound to `SINK_EMAIL`/`SINK_PHONE`. Missing sink → send refused, never silently delivered |
-| Kill-switch | Rolling 7-day opt-out rate, bounce rate, cost per qualified lead (with a 20-send floor so tiny samples can't trip it). Breach → workspace outbound paused + audit log; admin reviews and resumes in Settings |
-| Volume caps | Per-workspace daily email/SMS caps and a per-prospect touch ceiling (default 4) |
-| Credentials | Per-workspace provider secrets encrypted (Fernet, key derived from `APP_SECRET_KEY`); never rendered back in the UI |
+| Kill-switch | Rolling 7-day opt-out rate, bounce rate, cost per qualified lead (20-send floor), **plus an absolute LLM spend ceiling** that trips even at zero conversions. Breach → workspace outbound paused + audit log; admin reviews and resumes in Settings |
+| Volume caps | Per-workspace daily email/SMS caps (atomic SQL increments — no race overshoot), campaign `daily_cap` enforced per calendar day, per-prospect touch ceiling (default 4) |
+| Credentials | Per-workspace provider secrets encrypted (Fernet, HKDF-derived key, `APP_SECRET_KEY_OLD` rotation path); write-validated per-provider field allowlist with https-only URLs (no SSRF via tenant config); never rendered back in the UI |
+| PII deletion | `POST /prospects/{id}/delete` (admin) erases the prospect and their messages/drafts/bookings while keeping the suppression entry (the lawful basis for honoring the opt-out) |
 | Cost tracking | Real per-model pricing on every LLM call, stored per message, aggregated in Analytics |
+| Audit trail | Login success/failure, setup, campaign status, approvals/bulk-approve, credential & model changes, kill-switch pauses, job retries, PII deletions |
 
 ## 3. Local development
 
@@ -149,19 +154,34 @@ SQLite is used automatically in dev (schema auto-created). Tests and lint:
 
 ```bash
 pip install pytest pytest-asyncio ruff
-pytest tests/ -q          # 39 tests: auth, tenancy, webhooks, queue, pipeline
-ruff check engine tests server.py
+pytest tests/ -q          # auth, CSRF, tenancy, webhooks, queue, pipeline, ops
+ruff check engine tests server.py worker.py
+# Run the suite against real Postgres (what CI does):
+TEST_DATABASE_URL=postgresql+asyncpg://user:pass@host/dbname pytest tests/ -q
 ```
 
 ## 4. Production deployment (Render)
 
-`render.yaml` provisions a Postgres database and the web service, runs
-`alembic upgrade head` before each deploy, and generates `APP_SECRET_KEY`.
+`render.yaml` provisions a Postgres database, the **web** service, and a
+dedicated **worker** service (job queue + scheduler), runs `alembic upgrade
+head` before each deploy, and generates `APP_SECRET_KEY`, `SETUP_TOKEN`, and
+`METRICS_TOKEN`. Driverless `postgresql://` URLs from the platform are
+normalized automatically (asyncpg for the app, psycopg2 for Alembic). A
+`Dockerfile` is provided for non-Render targets. Dependencies are pinned and
+constrained by `requirements.lock`.
+
+The app **refuses to boot** in production with unsafe config: dev/short
+`APP_SECRET_KEY`, SQLite `DATABASE_URL`, localhost/http `BASE_URL`, or a
+missing sink while `LIVE_MODE=false`.
+
 After the first deploy:
 
-1. Set `BASE_URL` to the public URL (webhook + unsubscribe links depend on it).
-2. Set `ANTHROPIC_API_KEY`, `SINK_EMAIL`, `SINK_PHONE`.
-3. Open the app → `/setup` creates the first workspace + admin (one-shot).
+1. Set `BASE_URL` to the public https URL (webhook + unsubscribe links
+   depend on it — the app will not start without it).
+2. Set `ANTHROPIC_API_KEY`, `SINK_EMAIL`, `SINK_PHONE`, and ideally
+   `SENTRY_DSN`.
+3. Open the app → `/setup` creates the first workspace + admin (one-shot,
+   requires the generated `SETUP_TOKEN` from the Render dashboard).
 4. In **Settings**: fill the playbook, sending identity (a *verified* Resend
    domain — never a shared sandbox sender), provider credentials, and register
    the listed webhook URLs in each provider dashboard with their signing
@@ -169,14 +189,25 @@ After the first deploy:
 5. Create a campaign, import a prospect CSV, activate.
 
 Notes:
-- Use the paid instance in production — the free tier spins down, which stops
+- Use paid instances in production — the free tier spins down, which stops
   the worker/scheduler and delays webhook handling (nothing is lost: state is
   in Postgres and jobs resume on wake — but follow-ups and sends stall).
-- Horizontal scaling is safe: job claiming uses `SELECT … FOR UPDATE SKIP
-  LOCKED`; the scheduler's actions are idempotent. To split roles, run a
-  second service with `RUN_WORKER=true` and set `RUN_WORKER=false` on web.
+- Horizontal scaling is safe on both tiers: job claiming uses `SELECT … FOR
+  UPDATE SKIP LOCKED`, and the scheduler takes a Postgres advisory lock per
+  pass, so extra replicas never run concurrent passes.
+- Shutdown is graceful: SIGTERM stops the loops, in-flight jobs get a drain
+  window (`SHUTDOWN_GRACE_SECONDS`), and anything cancelled mid-job is
+  requeued immediately without burning a retry attempt.
 - Database migrations: `alembic revision --autogenerate -m "…"` after model
-  changes; CI applies migrations to a fresh DB to catch drift.
+  changes. CI applies migrations to fresh SQLite **and Postgres** databases
+  and runs `alembic check` so a forgotten migration fails the build.
+- `/health` is a real readiness check (DB ping + worker/scheduler heartbeat
+  staleness); `/health/live` is bare liveness; `/metrics` serves Prometheus
+  text metrics behind `METRICS_TOKEN`. Logs are JSON in production with a
+  per-request `X-Request-ID` correlation id.
+- Retention: done/dead jobs, webhook-event ledger rows, expired sessions,
+  and old daily counters are purged daily on configurable windows
+  (`RETENTION_*` env vars).
 
 ## 5. Go-live checklist (before `LIVE_MODE=true`)
 
@@ -197,13 +228,16 @@ Notes:
 | Symptom | Where to look | Likely fix |
 |---|---|---|
 | Outbound stopped for a workspace | Banner on every page; Settings shows pause reason; audit log `killswitch_pause` | Investigate the breached metric in Analytics; resume in Settings |
-| Draft stuck in "approved" | Jobs table: `send_draft` row `failed`/`dead` with `last_error` | Fix the cause (credentials, Resend outage); set status back to `failed` to retry |
-| Webhook 401s | Provider dashboard delivery logs | Signing secret mismatch — re-save credentials; AT: token in URL must match |
-| Replies not answered | `inbound_message` jobs; prospect timeline shows inbound with no outbound | Check Anthropic key/credit; job retries automatically |
+| Draft stuck in "approved" | **Jobs page** (`/jobs`): `send_draft` row `failed`/`dead` with its error | Fix the cause (credentials, Resend outage); click **Retry** |
+| Whole pipeline silent | `/health` returns 503 with the failing check named; `/metrics` job counts | Restart the worker service; stuck `running` jobs are reaped automatically every scheduler pass |
+| Webhook 401s | Provider dashboard delivery logs | Signing secret mismatch — re-save credentials; AT: token in URL must match; Svix: check clock skew (±5 min tolerance) |
+| Replies not answered | `inbound_message` jobs on `/jobs`; prospect timeline shows inbound with no outbound | Check Anthropic key/credit; job retries automatically |
 | Emails in spam | — | Verified domain, warm-up, lower daily cap; check bounce rate in Analytics |
 
-Dead jobs (`status='dead'`) keep their full traceback in `last_error` and
-never re-run; requeue by setting `status='failed'` after fixing the cause.
+Dead jobs (`status='dead'`) keep their full traceback and never re-run on
+their own; requeue them from the **Jobs** page (resets the attempt budget)
+after fixing the cause. Every failure is also in the JSON logs (searchable
+by `request_id`) and in Sentry when `SENTRY_DSN` is set.
 
 ## 7. Extension points
 
@@ -223,12 +257,17 @@ never re-run; requeue by setting `status='failed'` after fixing the cause.
 
 ```
 engine/            product package (see engine/__init__.py for the map)
-migrations/        Alembic (initial schema committed)
-tests/             pytest suite (39 tests, all offline — providers mocked)
-server.py, app.py  entry points (identical)
+migrations/        Alembic (schema + index migrations committed)
+tests/             pytest suite (offline — providers mocked; runs on SQLite
+                   and, via TEST_DATABASE_URL, on Postgres)
+server.py, app.py  web entry points (identical)
+worker.py          standalone worker/scheduler process (python -m worker)
+Dockerfile         container build (web by default; worker via command)
+requirements.lock  fully pinned transitive dependency set
 scripts/seed_demo_workspace.py   one-command demo workspace
-render.yaml        Render blueprint (Postgres + web + migrations)
-.github/workflows/ci.yml         lint + migration check + tests
+render.yaml        Render blueprint (Postgres + web + worker + migrations)
+.github/workflows/ci.yml   lint + SQLite & Postgres migration/drift checks
+                   + tests on both dialects + dependency CVE audit
 
 # Research / challenge coursework (kept intact, not part of the product):
 agent/ enrichment/ eval/ probes/ mechanism/ tenacious_bench_v0.1/ training/ …

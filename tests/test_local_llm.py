@@ -163,12 +163,12 @@ async def test_model_for_resolves_workspace_override_then_default():
 async def test_settings_models_route_persists_config(client):
     from engine.db import db_session
     from engine.models import Workspace
-    from tests.conftest import login, seed_workspace
+    from tests.conftest import login, post, seed_workspace
 
     seed = await seed_workspace()
     await login(client, seed["email"])
-    resp = await client.post(
-        "/settings/models",
+    resp = await post(
+        client, "/settings/models",
         data={"judge_model": "local:gemma-4-26b", "compose_model": "", "reply_model": ""},
     )
     assert resp.status_code == 303
