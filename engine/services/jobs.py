@@ -1,10 +1,14 @@
 """Job handlers — the asynchronous pipeline.
 
+enrich_prospect → workspace enrichment source → prospect.signals, 'enriched'
 compose_draft   → compose + judge (one regeneration on a low score) → Draft
                   (auto-approve per campaign policy → enqueue send_draft)
-send_draft      → policy-checked email send, prospect stage/touch update,
-                  follow-up scheduling, HubSpot sync enqueue
-inbound_message → reply agent → suppression / reply send / escalation
+send_draft      → policy-checked send. Outreach drafts: email send, prospect
+                  stage/touch update, follow-up scheduling, HubSpot sync
+                  enqueue. Reply drafts: channel-appropriate send only.
+inbound_message → reply agent → suppression / escalation → reply Draft
+                  (held for approval unless the workspace opts into
+                  auto-send; escalated replies are always held)
 sync_hubspot_contact, hubspot_mark_booked → CRM writes with retries
 """
 import logging
@@ -12,8 +16,10 @@ from datetime import timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from engine.config import get_settings
 from engine.models import (
     AuditLog,
+    Booking,
     Campaign,
     Draft,
     Job,
@@ -24,12 +30,14 @@ from engine.models import (
 )
 from engine.queue import enqueue, job_handler
 from engine.services import compose as compose_svc
+from engine.services import enrichment as enrichment_svc
 from engine.services import hubspot as hubspot_svc
 from engine.services import judge as judge_svc
-from engine.services import reply_agent
-from engine.services.emailer import send_email
+from engine.services import reply_agent, slack
+from engine.services.emailer import send_email, send_internal_email
 from engine.services.smser import send_sms
-from engine.services.suppression import SendBlocked, suppress
+from engine.services.suppression import SendBlocked, is_suppressed, suppress
+from engine.services.whatsapp import send_whatsapp
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +63,17 @@ async def _load_scoped(db: AsyncSession, payload: dict):
     return workspace, prospect
 
 
+@job_handler("enrich_prospect")
+async def handle_enrich_prospect(db: AsyncSession, job: Job) -> None:
+    workspace, prospect = await _load_scoped(db, job.payload)
+    if prospect.stage != "new":
+        return  # already enriched or advanced — nothing to do
+    await enrichment_svc.enrich_prospect(
+        db, workspace, prospect,
+        final_attempt=job.attempts >= job.max_attempts,
+    )
+
+
 @job_handler("compose_draft")
 async def handle_compose_draft(db: AsyncSession, job: Job) -> None:
     p = job.payload
@@ -72,7 +91,7 @@ async def handle_compose_draft(db: AsyncSession, job: Job) -> None:
     draft_fields, cost = await compose_svc.compose_outreach(
         db, workspace, prospect, campaign, touch_number=touch_number, angle=angle
     )
-    score, feedback, judge_cost = await judge_svc.judge_draft(
+    score, feedback, judge_cost, dimensions = await judge_svc.judge_draft(
         db,
         workspace,
         subject=draft_fields["subject"],
@@ -91,7 +110,7 @@ async def handle_compose_draft(db: AsyncSession, job: Job) -> None:
             touch_number=touch_number, angle=regen_angle,
         )
         cost += cost2
-        score, feedback, jc2 = await judge_svc.judge_draft(
+        score, feedback, jc2, dimensions = await judge_svc.judge_draft(
             db,
             workspace,
             subject=draft_fields["subject"],
@@ -110,9 +129,14 @@ async def handle_compose_draft(db: AsyncSession, job: Job) -> None:
         subject=draft_fields["subject"],
         body=draft_fields["body"],
         mode=draft_fields["mode_used"],
+        # The original angle (not the regeneration feedback) is the
+        # learning-loop attribution key.
+        angle=angle.strip()[:200],
         avg_confidence=draft_fields["avg_confidence"],
         judge_score=score,
+        judge_scores=dimensions,
         judge_feedback=feedback,
+        grounding_notes=str(draft_fields.get("grounding_notes", "")),
         touch_number=touch_number,
         compose_cost_usd=cost + judge_cost,
     )
@@ -138,6 +162,13 @@ async def handle_compose_draft(db: AsyncSession, job: Job) -> None:
             workspace_id=workspace.id,
             idempotency_key=f"send_draft:{draft.id}",
         )
+    else:
+        await slack.notify(
+            db, workspace.id,
+            f"📝 Draft for *{prospect.name or prospect.email}* "
+            f"({prospect.company or 'unknown company'}) awaits review — "
+            f"judge {score:.2f}. {get_settings().base_url}/approvals",
+        )
 
 
 @job_handler("send_draft")
@@ -154,17 +185,33 @@ async def handle_send_draft(db: AsyncSession, job: Job) -> None:
         raise RuntimeError("Draft prospect/workspace mismatch")
 
     try:
-        message = await send_email(
-            db,
-            workspace,
-            prospect,
-            subject=draft.subject,
-            body=draft.body,
-            compose_cost_usd=draft.compose_cost_usd,
-            # Resend-side dedup: a retry after a post-send DB failure
-            # must not deliver this draft a second time.
-            idempotency_key=f"draft-{draft.id}",
-        )
+        if draft.kind == "reply" and draft.channel == "sms" and prospect.phone:
+            message = await send_sms(
+                db, workspace, prospect,
+                to_phone=prospect.phone, body=draft.body,
+            )
+        elif (
+            draft.kind == "reply"
+            and draft.channel == "whatsapp"
+            and prospect.phone
+        ):
+            message = await send_whatsapp(
+                db, workspace, prospect,
+                to_phone=prospect.phone, body=draft.body,
+            )
+        else:
+            message = await send_email(
+                db,
+                workspace,
+                prospect,
+                subject=draft.subject or "Re: your reply",
+                body=draft.body,
+                # LLM cost stays on the Draft row (kill-switch/analytics sum
+                # drafts + messages) — copying it here would double-count.
+                # Resend-side dedup: a retry after a post-send DB failure
+                # must not deliver this draft a second time.
+                idempotency_key=f"draft-{draft.id}",
+            )
     except SendBlocked as exc:
         draft.status = "failed"
         draft.reject_reason = f"blocked: {exc.reason}"
@@ -173,6 +220,12 @@ async def handle_send_draft(db: AsyncSession, job: Job) -> None:
 
     draft.status = "sent"
     draft.sent_message_id = message.id
+
+    if draft.kind == "reply":
+        # A reply is not an outreach touch: it never advances the sequence,
+        # touch count, or stage (intent handling already did that inbound).
+        return
+
     prospect.stage = "contacted"
     prospect.touch_count += 1
     prospect.last_outbound_at = utcnow()
@@ -223,6 +276,7 @@ async def handle_inbound_message(db: AsyncSession, job: Job) -> None:
         await suppress(db, workspace.id, "email", prospect.email, "opt_out")
         if prospect.phone:
             await suppress(db, workspace.id, "sms", prospect.phone, "opt_out")
+            await suppress(db, workspace.id, "whatsapp", prospect.phone, "opt_out")
         prospect.stage = "opted_out"
         prospect.next_followup_at = None
         return
@@ -245,29 +299,163 @@ async def handle_inbound_message(db: AsyncSession, job: Job) -> None:
                 },
             )
         )
+        await slack.notify(
+            db, workspace.id,
+            f"🚨 Escalation from *{prospect.name or prospect.email}*: "
+            f"{result['escalation_reason']} — "
+            f"{get_settings().base_url}/prospects/{prospect.id}",
+        )
 
     reply_text = (result.get("reply") or "").strip()
     if not reply_text:
         return
+
+    # The reply agent's output is model text produced from attacker-
+    # controllable inbound content — it goes through the same Draft gate as
+    # outreach. Escalations are ALWAYS held for a human, and workspaces only
+    # auto-send after explicitly opting out of reply approval.
+    hold = workspace.require_reply_approval or bool(result["escalate"])
+    if channel in ("sms", "whatsapp") and prospect.phone:
+        reply_channel = channel  # answer on the channel they wrote on
+    else:
+        reply_channel = "email"
+    draft = Draft(
+        workspace_id=workspace.id,
+        prospect_id=prospect.id,
+        kind="reply",
+        channel=reply_channel,
+        subject="" if reply_channel in ("sms", "whatsapp") else "Re: your reply",
+        body=reply_text,
+        touch_number=0,
+        compose_cost_usd=result.get("cost_usd", 0.0),
+        status="pending_review" if hold else "approved",
+        auto_approved=not hold,
+    )
+    db.add(draft)
+    await db.flush()
+    if not hold:
+        await enqueue(
+            db,
+            "send_draft",
+            {"draft_id": draft.id},
+            workspace_id=workspace.id,
+            idempotency_key=f"send_draft:{draft.id}",
+        )
+    else:
+        await slack.notify(
+            db, workspace.id,
+            f"💬 Reply to *{prospect.name or prospect.email}* awaits review "
+            f"({intent} intent, {reply_channel}) — "
+            f"{get_settings().base_url}/approvals",
+        )
+
+
+@job_handler("booking_reminder")
+async def handle_booking_reminder(db: AsyncSession, job: Job) -> None:
+    """SMS no-show reduction: remind the prospect ahead of their booking.
+    Transactional message — bypasses the touch ceiling and daily caps but
+    NEVER a suppression."""
+    p = job.payload
+    workspace, prospect = await _load_scoped(db, p)
+    booking = await _load(db, Booking, p["booking_id"], "booking")
+    if booking.workspace_id != workspace.id:
+        raise RuntimeError("Booking/workspace mismatch in job payload")
+    if booking.status not in ("confirmed", "rescheduled"):
+        return  # cancelled since the reminder was scheduled
+    from engine.models import as_aware
+
+    start = as_aware(booking.start_time)
+    if start is None or start <= utcnow():
+        return  # nothing to remind about
+    if not prospect.phone:
+        return
+    if await is_suppressed(db, workspace.id, "sms", prospect.phone):
+        return
+
+    company = (workspace.playbook or {}).get("company_name", workspace.name)
+    when = start.strftime("%a %b %-d at %H:%M UTC")
     try:
-        if channel == "sms" and prospect.phone:
-            await send_sms(
-                db, workspace, prospect, to_phone=prospect.phone, body=reply_text
-            )
-        else:
-            await send_email(
-                db,
-                workspace,
-                prospect,
-                subject="Re: your reply",
-                body=reply_text,
-                compose_cost_usd=result.get("cost_usd", 0.0),
-                idempotency_key=f"reply-{p.get('message_id') or job.id}",
-            )
+        await send_sms(
+            db, workspace, prospect,
+            to_phone=prospect.phone,
+            body=(
+                f"Reminder: your call with {company} is {when}. "
+                "Reply STOP to opt out."
+            ),
+            # Transactional: the reminder must not burn an outreach touch or
+            # get blocked by the daily cap (suppression checked above).
+            skip_policy_checks=True,
+        )
     except SendBlocked as exc:
         logger.warning(
-            "Reply to prospect %s blocked: %s", prospect.id, exc.reason
+            "Booking reminder blocked for %s: %s", booking.id, exc.reason
         )
+        return
+    booking.meta = {**(booking.meta or {}), "reminder_sent_at": utcnow().isoformat()}
+
+
+@job_handler("weekly_digest")
+async def handle_weekly_digest(db: AsyncSession, job: Job) -> None:
+    """Weekly ROI digest to the workspace's admins (and Slack): what the
+    engine did last week and what it cost."""
+    from sqlalchemy import select
+
+    from engine.models import User
+    from engine.services.killswitch import compute_metrics
+
+    workspace = await _load(db, Workspace, job.payload["workspace_id"], "workspace")
+    metrics = await compute_metrics(db, workspace)
+    booked = len((await db.execute(
+        select(Booking.id).where(
+            Booking.workspace_id == workspace.id,
+            Booking.status.in_(["confirmed", "rescheduled"]),
+            Booking.created_at >= utcnow() - timedelta(days=7),
+        )
+    )).all())
+
+    cost = metrics["llm_cost_usd"]
+    cost_per_meeting = f"${cost / booked:.2f}" if booked else "—"
+    lines = [
+        f"Weekly digest for {workspace.name}",
+        "",
+        f"Emails sent:        {metrics['emails_out']}",
+        f"SMS sent:           {metrics['sms_out']}",
+        f"Qualified leads:    {metrics['qualified_leads']}",
+        f"Meetings booked:    {booked}",
+        f"Bounce rate:        {metrics['bounce_rate']:.1%}",
+        f"Opt-out rate:       {metrics['opt_out_rate']:.1%}",
+        f"LLM spend:          ${cost:.2f}",
+        f"Cost per meeting:   {cost_per_meeting}",
+        "",
+        f"Full analytics: {get_settings().base_url}/analytics",
+    ]
+    body = "\n".join(lines)
+
+    admins = (await db.execute(
+        select(User).where(
+            User.workspace_id == workspace.id,
+            User.role == "admin",
+            User.is_active.is_(True),
+        )
+    )).scalars().all()
+    subject = f"{workspace.name} — weekly outreach digest"
+    delivered = 0
+    for admin in admins:
+        try:
+            await send_internal_email(
+                db, workspace, to_email=admin.email, subject=subject, body=body
+            )
+            delivered += 1
+        except SendBlocked as exc:
+            # No Resend credentials / sending identity yet — Slack (below)
+            # may still land it; don't retry the job for this.
+            logger.info("Digest email skipped for %s: %s", workspace.id, exc.reason)
+            break
+    await slack.notify(db, workspace.id, f"📊 {subject}\n```{body}```")
+    logger.info(
+        "Weekly digest for ws=%s: %d email(s), booked=%d",
+        workspace.id, delivered, booked,
+    )
 
 
 @job_handler("sync_hubspot_contact")

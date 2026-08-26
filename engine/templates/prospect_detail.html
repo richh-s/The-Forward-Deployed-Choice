@@ -11,12 +11,18 @@
         {% if prospect.phone %} · <span class="mono">{{ prospect.phone }}</span>{% endif %}
       </div>
     </div>
-    <form class="inline row" method="post" action="/prospects/{{ prospect.id }}/stage">{{ csrf_field(request) }}
-      <select name="stage" style="width:auto">
-        {% for s in stages %}<option value="{{ s }}" {{ 'selected' if s == prospect.stage }}>{{ s }}</option>{% endfor %}
-      </select>
-      <button class="secondary">Set stage</button>
-    </form>
+    <span class="row" style="gap:8px">
+      <form class="inline" method="post" action="/prospects/{{ prospect.id }}/compose">{{ csrf_field(request) }}
+        <button class="secondary" title="Run the composer + judge for this prospect now; the draft lands in Approvals">
+          Compose draft now</button>
+      </form>
+      <form class="inline row" method="post" action="/prospects/{{ prospect.id }}/stage">{{ csrf_field(request) }}
+        <select name="stage" style="width:auto">
+          {% for s in stages %}<option value="{{ s }}" {{ 'selected' if s == prospect.stage }}>{{ s }}</option>{% endfor %}
+        </select>
+        <button class="secondary">Set stage</button>
+      </form>
+    </span>
   </div>
   <div class="muted" style="margin-top:8px">
     Touches: {{ prospect.touch_count }}

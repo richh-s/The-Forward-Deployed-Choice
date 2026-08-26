@@ -72,7 +72,7 @@ async def test_unsubscribe_post_suppresses(client: httpx.AsyncClient):
         from sqlalchemy import select
 
         rows = (await db.execute(select(Suppression))).scalars().all()
-        assert {(s.channel) for s in rows} == {"email", "sms"}
+        assert {(s.channel) for s in rows} == {"email", "sms", "whatsapp"}
         prospect = await db.get(Prospect, seed["prospect_id"])
         assert prospect.stage == "opted_out"
 

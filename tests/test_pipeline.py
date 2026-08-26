@@ -140,7 +140,11 @@ async def test_auto_approve_sends_via_sink(client: httpx.AsyncClient):
             select(Message).where(Message.direction == "out")
         )).scalar_one()
         assert message.provider_message_id == "re_msg_1"
-        assert message.cost_usd > 0
+        # LLM cost lives on the Draft (counted even if never sent); the sent
+        # Message no longer duplicates it.
+        assert message.cost_usd == 0
+        draft = (await db.execute(select(Draft))).scalar_one()
+        assert draft.compose_cost_usd > 0
 
 
 async def test_manual_approval_flow(client: httpx.AsyncClient):
@@ -225,8 +229,13 @@ async def test_cold_reply_suppresses_prospect():
         )
 
 
-async def test_warm_reply_sends_agent_response():
+async def test_warm_reply_sends_agent_response_when_auto_send_enabled():
     seed = await _seed_with_resend()
+    async with db_session() as db:
+        from engine.models import Workspace
+
+        ws = await db.get(Workspace, seed["workspace_id"])
+        ws.require_reply_approval = False  # workspace opted into auto-send
     warm = {
         "intent": "warm",
         "reply": "Great to hear! Here's our booking link.",
@@ -249,11 +258,18 @@ async def test_warm_reply_sends_agent_response():
                 "channel": "email",
                 "text": "Sounds interesting — let's talk!",
             })
-        assert await process_one()
+        # inbound_message creates the auto-approved reply draft, then the
+        # queued send_draft job delivers it.
+        while await process_one():
+            pass
     assert len(sent) == 1
     async with db_session() as db:
         prospect = await db.get(Prospect, seed["prospect_id"])
         assert prospect.stage == "warm"
+        draft = (await db.execute(
+            select(Draft).where(Draft.kind == "reply")
+        )).scalar_one()
+        assert draft.status == "sent" and draft.auto_approved
 
 
 async def test_second_touch_send_is_fully_recorded():

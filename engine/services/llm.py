@@ -31,6 +31,7 @@ from tenacity import (
 )
 
 from engine.config import get_settings
+from engine.queue import PermanentJobError
 from engine.services.credentials import get_credentials
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,12 @@ LOCAL_PREFIX = "local:"
 
 _local_client: httpx.AsyncClient | None = None
 _warned_plaintext_key = False
+
+
+class LLMPermanentError(PermanentJobError):
+    """A model outcome that will repeat on an identical retry (refusal,
+    output truncated at the configured max_tokens). Jobs hitting this go
+    straight to dead instead of re-billing the same prompt five times."""
 
 
 def _get_local_client() -> httpx.AsyncClient:
@@ -114,6 +121,13 @@ class LLMResult:
 # ── Anthropic backend ────────────────────────────────────────────────
 
 
+# One long-lived client (and connection pool) per distinct API key, instead
+# of a new client per call — a per-call client leaks connections/FDs on a
+# long-lived worker. Bounded: evicting the oldest closes its pool.
+_anthropic_clients: dict[str, anthropic.AsyncAnthropic] = {}
+_MAX_ANTHROPIC_CLIENTS = 32
+
+
 async def _client_for_workspace(
     db: AsyncSession, workspace_id: str
 ) -> anthropic.AsyncAnthropic:
@@ -125,11 +139,22 @@ async def _client_for_workspace(
             "No Anthropic API key configured (workspace credentials or "
             "ANTHROPIC_API_KEY)"
         )
-    return anthropic.AsyncAnthropic(
-        api_key=api_key,
-        timeout=settings.llm_timeout_seconds,
-        max_retries=settings.llm_max_retries,
-    )
+    client = _anthropic_clients.get(api_key)
+    if client is None:
+        while len(_anthropic_clients) >= _MAX_ANTHROPIC_CLIENTS:
+            oldest_key = next(iter(_anthropic_clients))
+            oldest = _anthropic_clients.pop(oldest_key)
+            try:
+                await oldest.close()
+            except Exception:  # noqa: BLE001 — eviction is best-effort
+                pass
+        client = anthropic.AsyncAnthropic(
+            api_key=api_key,
+            timeout=settings.llm_timeout_seconds,
+            max_retries=settings.llm_max_retries,
+        )
+        _anthropic_clients[api_key] = client
+    return client
 
 
 async def _complete_anthropic(
@@ -160,13 +185,17 @@ async def _complete_anthropic(
 
     response = await client.messages.create(**kwargs)
 
+    # Deterministic outcomes: the same prompt will refuse/truncate again, so
+    # these are permanent — the queue must not spend retries (and money) on them.
     if response.stop_reason == "refusal":
         detail = ""
         if getattr(response, "stop_details", None):
             detail = f" ({response.stop_details.explanation})"
-        raise RuntimeError(f"Model declined the request{detail}")
+        raise LLMPermanentError(f"Model declined the request{detail}")
     if response.stop_reason == "max_tokens":
-        raise RuntimeError("Model output truncated at max_tokens; raise the limit")
+        raise LLMPermanentError(
+            "Model output truncated at max_tokens; raise the limit"
+        )
 
     text = "".join(b.text for b in response.content if b.type == "text")
     return LLMResult(

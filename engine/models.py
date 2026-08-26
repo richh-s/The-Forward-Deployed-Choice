@@ -76,6 +76,10 @@ class Workspace(Base, TimestampMixin):
     # Kill-switch threshold overrides (fall back to platform defaults)
     killswitch: Mapped[dict] = mapped_column(JSON, default=dict)
 
+    # Hold reply-agent responses for human review before sending (escalated
+    # replies are always held regardless of this flag).
+    require_reply_approval: Mapped[bool] = mapped_column(Boolean, default=True)
+
     # Per-workspace model overrides by role: {"compose": "...", "reply":
     # "...", "judge": "local:gemma-4-26b"}. Empty → platform env defaults.
     llm_config: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -96,6 +100,9 @@ class User(Base, TimestampMixin):
     password_hash: Mapped[str] = mapped_column(String(200), nullable=False)
     role: Mapped[str] = mapped_column(String(20), default="operator")  # admin|operator
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Set on admin-created accounts and password resets: the user must pick
+    # their own password before doing anything else.
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     workspace: Mapped[Workspace] = relationship(back_populates="users")
@@ -212,13 +219,29 @@ class Draft(Base, TimestampMixin):
     )
     prospect_id: Mapped[str] = mapped_column(ForeignKey("prospects.id"), nullable=False)
     campaign_id: Mapped[str | None] = mapped_column(ForeignKey("campaigns.id"))
+    # outreach: campaign-composed first/follow-up touch (judged, sequenced).
+    # reply: reply-agent response to an inbound message (no judge score;
+    # sending never advances the touch/follow-up sequence).
+    kind: Mapped[str] = mapped_column(String(10), default="outreach")
     channel: Mapped[str] = mapped_column(String(10), default="email")  # email|sms
     subject: Mapped[str] = mapped_column(String(500), default="")
     body: Mapped[str] = mapped_column(Text, nullable=False)
     mode: Mapped[str] = mapped_column(String(20), default="")  # assertion|inquiry
+    # Campaign angle this draft was composed with — the attribution key for
+    # the learning loop (which angles earn replies/bookings).
+    angle: Mapped[str] = mapped_column(String(200), default="")
     avg_confidence: Mapped[float | None] = mapped_column(Float)
     judge_score: Mapped[float | None] = mapped_column(Float)
+    # Per-dimension judge scores (signal_grounding, hallucination_free, …)
+    # shown in the approval card; judge_score is their weighted composite.
+    judge_scores: Mapped[dict] = mapped_column(JSON, default=dict)
     judge_feedback: Mapped[str] = mapped_column(Text, default="")
+    # Composer's claim→signal mapping, rendered as evidence in review.
+    grounding_notes: Mapped[str] = mapped_column(Text, default="")
+    # How much the human changed the draft at approval: 0 = sent verbatim,
+    # 1 = fully rewritten. None until (unless) a human reviews it. Fuels the
+    # judge-calibration analytics and the fine-tuning export.
+    edit_ratio: Mapped[float | None] = mapped_column(Float)
     touch_number: Mapped[int] = mapped_column(Integer, default=1)
     compose_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
 

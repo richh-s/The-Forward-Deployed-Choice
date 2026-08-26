@@ -4,13 +4,15 @@ Every handler re-checks workspace ownership on the target object — the
 workspace_id filter is the tenancy boundary; never trust an id from a form.
 """
 import csv
+import difflib
+import html as html_mod
 import io
 import json
 import logging
 import secrets
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +23,7 @@ from engine.auth import (
     current_auth,
     destroy_all_sessions,
 )
+from engine.config import get_settings
 from engine.db import get_db
 from engine.models import (
     PROSPECT_STAGES,
@@ -41,7 +44,8 @@ from engine.services.credentials import (
     set_credentials,
     validate_credential_payload,
 )
-from engine.services.suppression import suppress
+from engine.services.emailer import send_test_email
+from engine.services.suppression import SendBlocked, suppress
 from engine.validation import valid_email, valid_phone
 
 logger = logging.getLogger(__name__)
@@ -239,7 +243,7 @@ async def _approve_draft(db: AsyncSession, auth: AuthContext, draft: Draft) -> N
 @router.post("/approvals/{draft_id}/approve")
 async def approve_draft(
     draft_id: str,
-    subject: str = Form(...),
+    subject: str = Form(""),
     body: str = Form(...),
     auth: AuthContext = Depends(current_auth),
     db: AsyncSession = Depends(get_db),
@@ -247,8 +251,18 @@ async def approve_draft(
     draft = await _own_draft(db, auth, draft_id)
     if draft.status != "pending_review":
         return _redirect("/approvals", "Draft was already handled")
-    if not subject.strip() or not body.strip():
-        return _redirect("/approvals", "Subject and body cannot be empty")
+    if not body.strip():
+        return _redirect("/approvals", "Body cannot be empty")
+    # SMS/WhatsApp reply drafts have no subject; everything else needs one.
+    if draft.channel not in ("sms", "whatsapp") and not subject.strip():
+        return _redirect("/approvals", "Subject cannot be empty")
+    # Learning loop: record how much the human changed before approving
+    # (0 = sent verbatim, 1 = fully rewritten).
+    original = f"{draft.subject}\n{draft.body}"
+    edited = f"{subject.strip()[:500]}\n{body.strip()}"
+    draft.edit_ratio = round(
+        1.0 - difflib.SequenceMatcher(None, original, edited).ratio(), 4
+    )
     draft.subject = subject.strip()[:500]
     draft.body = body.strip()
     await _approve_draft(db, auth, draft)
@@ -282,6 +296,11 @@ async def bulk_approve(
     auth: AuthContext = Depends(current_auth),
     db: AsyncSession = Depends(get_db),
 ):
+    # Clamp like auto_approve_score: a typo'd threshold (e.g. -1) must not
+    # approve judge-rejected drafts wholesale.
+    min_score = min(max(min_score, 0.0), 1.0)
+    # judge_score is NULL on reply drafts, so the comparison excludes them —
+    # replies always get individual human review.
     rows = await db.execute(
         select(Draft).where(
             Draft.workspace_id == auth.workspace.id,
@@ -299,6 +318,27 @@ async def bulk_approve(
             action="bulk_approve", detail={"count": count, "min_score": min_score},
         ))
     return _redirect("/approvals", f"Approved {count} drafts scoring ≥ {min_score}")
+
+
+@router.post("/approvals/{draft_id}/test-send")
+async def test_send_draft(
+    draft_id: str,
+    auth: AuthContext = Depends(current_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Email the draft to the reviewer's own address — a real end-to-end
+    check of credentials and rendering without touching any prospect."""
+    draft = await _own_draft(db, auth, draft_id)
+    try:
+        await send_test_email(
+            db, auth.workspace,
+            to_email=auth.user.email,
+            subject=draft.subject or "(no subject — SMS draft)",
+            body=draft.body,
+        )
+    except SendBlocked as exc:
+        return _redirect("/approvals", f"Test send blocked: {exc.reason}")
+    return _redirect("/approvals", f"Test sent to {auth.user.email}")
 
 
 # ── prospects ─────────────────────────────────────────────────────────
@@ -319,6 +359,9 @@ async def set_prospect_stage(
         await suppress(db, auth.workspace.id, "email", prospect.email, "manual")
         if prospect.phone:
             await suppress(db, auth.workspace.id, "sms", prospect.phone, "manual")
+            await suppress(
+                db, auth.workspace.id, "whatsapp", prospect.phone, "manual"
+            )
         prospect.next_followup_at = None
     return _redirect(f"/prospects/{prospect.id}", f"Stage set to {stage}")
 
@@ -340,6 +383,7 @@ async def delete_prospect(
     await suppress(db, auth.workspace.id, "email", email, "manual")
     if prospect.phone:
         await suppress(db, auth.workspace.id, "sms", prospect.phone, "manual")
+        await suppress(db, auth.workspace.id, "whatsapp", prospect.phone, "manual")
     for model in (Message, Draft, Booking):
         await db.execute(sa_delete(model).where(
             model.workspace_id == auth.workspace.id,
@@ -351,6 +395,43 @@ async def delete_prospect(
         action="prospect_deleted", detail={"prospect_id": prospect_id},
     ))
     return _redirect("/prospects", "Prospect data erased")
+
+
+@router.post("/prospects/{prospect_id}/compose")
+async def compose_now(
+    prospect_id: str,
+    auth: AuthContext = Depends(current_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Compose a draft for this prospect on demand — preview the pipeline
+    (composer + judge + approval queue) without waiting for the scheduler.
+    The draft lands in Approvals; nothing sends without the normal gates."""
+    prospect = await _own_prospect(db, auth, prospect_id)
+    if prospect.stage == "opted_out":
+        return _redirect(f"/prospects/{prospect.id}", "Prospect has opted out")
+    job = await enqueue(
+        db,
+        "compose_draft",
+        {
+            "workspace_id": auth.workspace.id,
+            "prospect_id": prospect.id,
+            "campaign_id": prospect.campaign_id,
+            "touch_number": prospect.touch_count + 1,
+            "manual": True,
+        },
+        workspace_id=auth.workspace.id,
+        # Dedupe double-clicks without blocking a deliberate re-compose later.
+        idempotency_key=f"compose:manual:{prospect.id}"
+        f":{utcnow().strftime('%Y%m%d%H%M')}",
+    )
+    if job is None:
+        return _redirect(
+            f"/prospects/{prospect.id}", "A compose was already queued just now"
+        )
+    return _redirect(
+        f"/prospects/{prospect.id}",
+        "Draft queued — it will appear in Approvals once composed and judged",
+    )
 
 
 @router.post("/prospects/{prospect_id}/signals")
@@ -514,6 +595,52 @@ async def update_credentials(
     return _redirect("/settings", f"{provider} credentials saved")
 
 
+@router.get("/settings/export-judge-data")
+async def export_judge_data(
+    auth: AuthContext = Depends(current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Human-reviewed drafts as JSONL fine-tuning rows for a workspace
+    judge: model input (signals + draft) with both the API judge's verdict
+    and the human's decision as the label. Feeds the Week-11 LoRA critic
+    seam in engine/services/judge.py."""
+    from fastapi.responses import PlainTextResponse
+
+    from engine.services import learning
+
+    rows = await learning.export_judge_training_rows(db, auth.workspace.id)
+    body = "\n".join(json.dumps(r, ensure_ascii=False) for r in rows)
+    db.add(AuditLog(
+        workspace_id=auth.workspace.id, user_id=auth.user.id,
+        action="judge_data_exported", detail={"rows": len(rows)},
+    ))
+    return PlainTextResponse(
+        body,
+        media_type="application/jsonl",
+        headers={
+            "Content-Disposition":
+                'attachment; filename="judge_training_data.jsonl"'
+        },
+    )
+
+
+@router.post("/settings/reply-approval")
+async def update_reply_approval(
+    require_reply_approval: bool = Form(False),
+    auth: AuthContext = Depends(current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    auth.workspace.require_reply_approval = require_reply_approval
+    db.add(auth.workspace)
+    db.add(AuditLog(
+        workspace_id=auth.workspace.id, user_id=auth.user.id,
+        action="reply_approval_changed",
+        detail={"require_reply_approval": require_reply_approval},
+    ))
+    state = "held for review" if require_reply_approval else "sent automatically"
+    return _redirect("/settings", f"Reply-agent responses will be {state}")
+
+
 @router.post("/settings/resume-outbound")
 async def resume_outbound(
     auth: AuthContext = Depends(current_admin),
@@ -567,12 +694,55 @@ async def add_user(
         name=name.strip()[:200],
         password_hash=await hash_password_async(password),
         role=role,
+        # The admin knows this temporary password; force a change on first use.
+        must_change_password=True,
     ))
     db.add(AuditLog(
         workspace_id=auth.workspace.id, user_id=auth.user.id,
         action="user_added", detail={"email": addr, "role": role},
     ))
-    return _redirect("/settings", f"User {addr} added")
+    return _redirect(
+        "/settings",
+        f"User {addr} added — they must set their own password on first login",
+    )
+
+
+@router.post("/settings/users/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: str,
+    auth: AuthContext = Depends(current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin account recovery: issue a one-time temporary password for a
+    locked-out teammate, revoking all their sessions. The temporary password
+    is rendered ONCE in the response body (never in a URL, where it would
+    land in access logs)."""
+    target = await db.get(User, user_id)
+    if target is None or target.workspace_id != auth.workspace.id:
+        raise HTTPException(status_code=404)
+    if target.id == auth.user.id:
+        return _redirect(
+            "/settings", "Use the password change form for your own account"
+        )
+    temp_password = secrets.token_urlsafe(12)
+    target.password_hash = await hash_password_async(temp_password)
+    target.must_change_password = True
+    revoked = await destroy_all_sessions(db, target.id)
+    db.add(AuditLog(
+        workspace_id=auth.workspace.id, user_id=auth.user.id,
+        action="password_reset",
+        detail={"target_user": target.email, "sessions_revoked": revoked},
+    ))
+    return HTMLResponse(
+        "<!doctype html><meta charset='utf-8'>"
+        "<body style='font-family:sans-serif;max-width:560px;margin:80px auto'>"
+        f"<h2>Temporary password for {html_mod.escape(target.email)}</h2>"
+        f"<p>Share it over a trusted channel — it is shown only once:</p>"
+        f"<p><code style='font-size:18px'>{html_mod.escape(temp_password)}</code></p>"
+        "<p>They must set their own password at first login. All their "
+        f"existing sessions ({revoked}) were signed out.</p>"
+        "<p><a href='/settings'>Back to Settings</a></p></body>"
+    )
 
 
 @router.post("/settings/password")
@@ -588,11 +758,24 @@ async def change_password(
     if len(new_password) < 10:
         return _redirect("/settings", "Password must be at least 10 characters")
     auth.user.password_hash = await hash_password_async(new_password)
+    auth.user.must_change_password = False
     revoked = await destroy_all_sessions(db, auth.user.id)
     db.add(AuditLog(
         workspace_id=auth.workspace.id, user_id=auth.user.id,
         action="password_changed", detail={"sessions_revoked": revoked},
     ))
     # The caller's own session was revoked too — send them to log in again.
-    return RedirectResponse("/login?error=Password+changed+—+log+in+again",
-                            status_code=303)
+    # Also clear the (now dead) session cookie: the CSRF check binds to the
+    # session cookie when one is present, so a stale cookie would 403 the
+    # very next login attempt.
+    settings = get_settings()
+    response = RedirectResponse(
+        "/login?error=Password+changed+—+log+in+again", status_code=303
+    )
+    response.delete_cookie(
+        settings.session_cookie_name,
+        httponly=True,
+        samesite="lax",
+        secure=settings.is_production,
+    )
+    return response

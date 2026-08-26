@@ -83,8 +83,9 @@ async def judge_draft(
     mode: str,
     avg_confidence: float,
     signals: dict,
-) -> tuple[float, str, float]:
-    """Score a draft. Returns (composite score 0..1, feedback, llm cost usd)."""
+) -> tuple[float, str, float, dict]:
+    """Score a draft. Returns (composite score 0..1, feedback, llm cost usd,
+    per-dimension scores clamped to [0, 1])."""
     user_prompt = f"""Signal brief the email was composed from:
 {json.dumps(signals, indent=2)}
 
@@ -106,4 +107,10 @@ Subject: {subject}
         json_schema=JUDGE_SCHEMA,
     )
     scores = result.json()
-    return composite_score(scores), scores.get("feedback", ""), result.cost_usd
+    dimensions = {k: _clamp01(scores.get(k, 0.0)) for k in WEIGHTS}
+    return (
+        composite_score(scores),
+        scores.get("feedback", ""),
+        result.cost_usd,
+        dimensions,
+    )

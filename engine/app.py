@@ -203,8 +203,15 @@ def create_app() -> FastAPI:
         wants_html = "text/html" in request.headers.get("accept", "")
         if exc.status_code == 401 and wants_html:
             return RedirectResponse("/login", status_code=303)
+        # Redirect-style exceptions (e.g. the forced-password-change gate)
+        # carry their target in a Location header — honor it.
+        location = (exc.headers or {}).get("Location")
+        if exc.status_code in (302, 303, 307) and location:
+            return RedirectResponse(location, status_code=exc.status_code)
         return JSONResponse(
-            status_code=exc.status_code, content={"detail": exc.detail}
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=exc.headers,
         )
 
     return app

@@ -88,7 +88,19 @@ class Settings(BaseSettings):
     sink_phone: str = Field(default="")
     max_emails_per_day_per_workspace: int = 200
     max_sms_per_day_per_workspace: int = 200
+    max_whatsapp_per_day_per_workspace: int = 200
     max_touches_per_prospect: int = 4
+
+    # ── deliverability warm-up (email) ───────────────────────────────
+    # New sending domains must ramp, not blast: the effective email cap is
+    # min(daily cap, warmup_start_per_day * warmup_daily_growth^days) where
+    # days counts from the workspace's first outbound email.
+    warmup_enabled: bool = True
+    warmup_start_per_day: int = 20
+    warmup_daily_growth: float = 1.25
+
+    # ── weekly client digest ─────────────────────────────────────────
+    weekly_digest_enabled: bool = True
 
     # ── kill-switch defaults (per-workspace overrides in DB) ─────────
     killswitch_window_days: int = 7
@@ -117,6 +129,9 @@ class Settings(BaseSettings):
 
     # ── session auth ─────────────────────────────────────────────────
     session_ttl_hours: int = 24 * 7
+    # Hard cap on total session age: sliding renewal never extends a session
+    # past created_at + this, so a stolen cookie cannot live forever.
+    session_absolute_hours: int = 24 * 30
     session_cookie_name: str = "engine_session"
 
     @property

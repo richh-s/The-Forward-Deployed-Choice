@@ -13,6 +13,12 @@ PROVIDER_FIELDS: dict[str, list[str]] = {
     "africastalking": ["username", "api_key", "webhook_token", "sales_phone"],
     "twilio": ["account_sid", "auth_token", "from_number", "sales_phone"],
     "anthropic": ["api_key"],
+    # Signal source for prospects: POST {email, name, company, title, phone}
+    # → {"signals": {...}} (see engine/services/enrichment.py).
+    "enrichment": ["url", "api_key"],
+    # Slack incoming webhook for operator notifications (drafts awaiting
+    # review, escalations, kill-switch pauses, weekly digest).
+    "slack": ["webhook_url"],
 }
 
 
@@ -36,9 +42,12 @@ def validate_credential_payload(provider: str, payload: dict) -> dict:
         k: str(v).strip() for k, v in payload.items()
         if k in allowed and v is not None and str(v).strip()
     }
-    base_url = cleaned.get("base_url", "")
-    if base_url and not base_url.startswith("https://"):
-        raise CredentialValidationError("base_url must be an https:// URL")
+    for url_field in ("base_url", "url", "webhook_url"):
+        value = cleaned.get(url_field, "")
+        if value and not value.startswith("https://"):
+            raise CredentialValidationError(
+                f"{url_field} must be an https:// URL"
+            )
     token = cleaned.get("webhook_token", "")
     if token and len(token) < 16:
         raise CredentialValidationError(

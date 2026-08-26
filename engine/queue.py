@@ -31,6 +31,12 @@ logger = logging.getLogger(__name__)
 JobHandler = Callable[[AsyncSession, Job], Awaitable[None]]
 _handlers: dict[str, JobHandler] = {}
 
+
+class PermanentJobError(Exception):
+    """A failure that retrying cannot fix (e.g. a model refusal on the same
+    prompt). The job goes straight to 'dead' without burning the remaining
+    attempts on identical, billable re-runs."""
+
 # Liveness heartbeats, read by /health: loop name → last-iteration time.
 heartbeats: dict[str, object] = {}
 
@@ -106,9 +112,10 @@ def _backoff_seconds(attempts: int) -> float:
 
 
 async def _record_failure(
-    job_id: str, job_type: str, attempts: int, max_attempts: int, error: str
+    job_id: str, job_type: str, attempts: int, max_attempts: int, error: str,
+    *, permanent: bool = False,
 ) -> None:
-    status = "failed" if attempts < max_attempts else "dead"
+    status = "failed" if attempts < max_attempts and not permanent else "dead"
     async with db_session() as db:
         await db.execute(
             update(Job)
@@ -118,6 +125,15 @@ async def _record_failure(
                 last_error=error[-4000:],
                 run_after=utcnow() + timedelta(seconds=_backoff_seconds(attempts)),
             )
+        )
+    if status == "dead":
+        # Error level so log-based alerting fires; the dashboard banner and
+        # /metrics dead-job count surface it to operators.
+        logger.error(
+            "Job %s (%s) is DEAD after %d attempt(s)%s: %s",
+            job_id, job_type, attempts,
+            " [permanent failure]" if permanent else "",
+            error.splitlines()[0] if error else "",
         )
 
 
@@ -152,6 +168,16 @@ async def process_one() -> bool:
         except Exception:  # noqa: BLE001 — best effort during shutdown
             logger.warning("Could not requeue job %s on shutdown", job_id)
         raise
+    except PermanentJobError as exc:
+        logger.error(
+            "Job %s (%s) failed permanently on attempt %d: %s",
+            job_id, job_type, attempts, exc,
+        )
+        await _record_failure(
+            job_id, job_type, attempts, max_attempts,
+            f"{exc}\n{traceback.format_exc()[-2000:]}",
+            permanent=True,
+        )
     except Exception as exc:  # noqa: BLE001 — the queue is the failure boundary
         logger.error(
             "Job %s (%s) attempt %d/%d failed: %s",

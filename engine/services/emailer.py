@@ -33,16 +33,19 @@ def _is_retryable(exc: BaseException) -> bool:
     return isinstance(exc, (httpx.TimeoutException, httpx.TransportError))
 
 
-def render_html(body_text: str, unsubscribe_url: str) -> str:
-    """Plain-text body → minimal HTML with a mandatory unsubscribe footer."""
-    paragraphs = "".join(
+def _paragraphs_html(body_text: str) -> str:
+    return "".join(
         f"<p>{html.escape(p).replace(chr(10), '<br>')}</p>"
         for p in body_text.split("\n\n")
         if p.strip()
     )
+
+
+def render_html(body_text: str, unsubscribe_url: str) -> str:
+    """Plain-text body → minimal HTML with a mandatory unsubscribe footer."""
     return (
         '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
-        f'line-height:1.5;color:#222">{paragraphs}'
+        f'line-height:1.5;color:#222">{_paragraphs_html(body_text)}'
         '<p style="margin-top:24px;font-size:12px;color:#888">'
         f'If you\'d rather not hear from us, <a href="{html.escape(unsubscribe_url)}">'
         "unsubscribe here</a>.</p></div>"
@@ -66,6 +69,59 @@ async def _resend_send(
     resp = await get_client().post(RESEND_API, headers=headers, json=payload)
     resp.raise_for_status()
     return resp.json()
+
+
+async def send_internal_email(
+    db: AsyncSession,
+    workspace: Workspace,
+    *,
+    to_email: str,
+    subject: str,
+    body: str,
+    footer: str = "Internal message from your Conversion Engine workspace.",
+) -> None:
+    """Staff-facing email (test sends, weekly digests).
+
+    Deliberately bypasses sink mode, suppression, caps, and the Message
+    timeline: this is workspace staff mail, not prospect outreach — it
+    exercises the real Resend credentials and rendering end to end."""
+    creds = await get_credentials(db, workspace.id, "resend")
+    if not creds or not creds.get("api_key"):
+        raise SendBlocked("Resend credentials are not configured for this workspace")
+    if not workspace.from_email:
+        raise SendBlocked("Workspace sending address (from_email) is not configured")
+    payload = {
+        "from": f"{workspace.from_name or workspace.name} <{workspace.from_email}>",
+        "to": [to_email],
+        "subject": subject,
+        "text": f"{body}\n\n---\n{footer}",
+        "html": (
+            '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
+            f'line-height:1.5;color:#222">{_paragraphs_html(body)}'
+            '<p style="margin-top:24px;font-size:12px;color:#888">'
+            f'{footer}</p></div>'
+        ),
+    }
+    await _resend_send(creds["api_key"], payload)
+    logger.info("Internal email sent | ws=%s to staff address", workspace.id)
+
+
+async def send_test_email(
+    db: AsyncSession,
+    workspace: Workspace,
+    *,
+    to_email: str,
+    subject: str,
+    body: str,
+) -> None:
+    """Send a draft preview to a logged-in staff member's own address."""
+    await send_internal_email(
+        db, workspace,
+        to_email=to_email,
+        subject=f"[TEST] {subject}",
+        body=body,
+        footer="This is an internal test send — no prospect received this email.",
+    )
 
 
 async def send_email(

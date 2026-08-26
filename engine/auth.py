@@ -64,11 +64,19 @@ async def _resolve_session(db: AsyncSession, token: str) -> AuthContext | None:
     session = row.scalar_one_or_none()
     if session is None or as_aware(session.expires_at) < utcnow():
         return None
-    # Sliding renewal: keep active users logged in without ever handing out
-    # an immortal cookie — each use pushes expiry out to a fresh TTL.
-    ttl = timedelta(hours=get_settings().session_ttl_hours)
+    settings = get_settings()
+    # Absolute lifetime: sliding renewal never carries a session past
+    # created_at + the cap, so no cookie is immortal however active it stays.
+    absolute_cap = as_aware(session.created_at) + timedelta(
+        hours=settings.session_absolute_hours
+    )
+    if absolute_cap < utcnow():
+        return None
+    # Sliding renewal: keep active users logged in — each use pushes expiry
+    # out to a fresh TTL, up to the absolute cap.
+    ttl = timedelta(hours=settings.session_ttl_hours)
     if as_aware(session.expires_at) - utcnow() < ttl / 2:
-        session.expires_at = utcnow() + ttl
+        session.expires_at = min(utcnow() + ttl, absolute_cap)
     user = await db.get(User, session.user_id)
     if user is None or not user.is_active:
         return None
@@ -76,6 +84,11 @@ async def _resolve_session(db: AsyncSession, token: str) -> AuthContext | None:
     if workspace is None:
         return None
     return AuthContext(user, workspace)
+
+
+# Routes a user with a pending forced password change may still reach:
+# the settings page (holding the change form), the change itself, logout.
+_MUST_CHANGE_ALLOWED_PATHS = ("/settings", "/settings/password", "/logout")
 
 
 async def current_auth(
@@ -88,6 +101,15 @@ async def current_auth(
     ctx = await _resolve_session(db, token)
     if ctx is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+    if (
+        ctx.user.must_change_password
+        and request.url.path not in _MUST_CHANGE_ALLOWED_PATHS
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_303_SEE_OTHER,
+            detail="Password change required",
+            headers={"Location": "/settings?msg=Set+a+new+password+to+continue"},
+        )
     return ctx
 
 

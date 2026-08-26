@@ -28,4 +28,77 @@
     pauses all outbound for this workspace until an admin reviews and resumes
     it in Settings.</p>
 </div>
+
+<div class="panel">
+  <h2>Deliverability — domain warm-up</h2>
+  <div class="grid cols-3">
+    <div class="stat"><div class="value">{{ delivery.cap_today }}</div>
+      <div class="label">Effective email cap today
+        {% if not delivery.warmed_up %}(warming up, day {{ delivery.warmup_day }}){% endif %}</div></div>
+    <div class="stat"><div class="value">{{ delivery.bounced_7d }}</div><div class="label">Bounces (7d)</div></div>
+    <div class="stat"><div class="value">{{ delivery.complained_7d }}</div><div class="label">Complaints (7d)</div></div>
+  </div>
+  <p class="muted">
+    {% if delivery.warmed_up %}Domain fully warmed up — the full cap of
+    {{ delivery.full_cap }}/day applies.{% else %}New sending domains ramp
+    automatically toward the {{ delivery.full_cap }}/day cap so early volume
+    doesn't burn the domain.{% endif %}
+    Keep SPF, DKIM, and DMARC green in your DNS and Resend dashboard.</p>
+</div>
+
+<div class="panel">
+  <h2>Learning — angle performance (90 days)</h2>
+  {% if angles %}
+  <table>
+    <tr><th>Angle</th><th>Sends</th><th>Replies</th><th>Reply rate</th><th>Bookings</th></tr>
+    {% for a in angles %}
+    <tr>
+      <td>{{ a.angle }}</td>
+      <td>{{ a.sends }}</td>
+      <td>{{ a.replies }}</td>
+      <td><strong>{{ '%.1f%%' | format(a.reply_rate * 100) }}</strong></td>
+      <td>{{ a.bookings }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="muted">Replies and bookings are attributed to the last touch
+    that preceded them. Promote the winning angles in your campaign
+    sequences.</p>
+  {% else %}<p class="muted">No sent drafts in the window yet — angle
+    performance appears once campaigns start sending.</p>{% endif %}
+</div>
+
+<div class="panel">
+  <h2>Learning — judge calibration (90 days)</h2>
+  {% if calibration.reviewed_total %}
+  <table>
+    <tr><th>Judge score band</th><th>Reviewed</th><th>Human-approved</th><th>Approval rate</th><th>Avg edit</th></tr>
+    {% for b in calibration.bands %}
+    <tr>
+      <td>{{ b.band }}</td>
+      <td>{{ b.reviewed }}</td>
+      <td>{{ b.approved }}</td>
+      <td>{{ '%.0f%%' | format(b.approval_rate * 100) if b.approval_rate is not none else '—' }}</td>
+      <td>{{ '%.0f%%' | format(b.avg_edit_ratio * 100) if b.avg_edit_ratio is not none else '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="muted">
+    {% if calibration.recommended_auto_approve_score %}
+    Humans approve ≥95% of drafts scoring ≥
+    {{ calibration.recommended_auto_approve_score }} — you can consider
+    setting a campaign's auto-approve threshold there.
+    {% else %}
+    Not enough reviewed drafts yet to recommend an auto-approve threshold —
+    keep reviewing; every decision teaches the system.
+    {% endif %}
+    Reviewed drafts (and your edits) are exportable as judge fine-tuning
+    data in Settings.</p>
+  <div class="grid cols-3">
+    <div class="stat"><div class="value">{{ edits.reviewed }}</div><div class="label">Drafts human-reviewed</div></div>
+    <div class="stat"><div class="value">{{ '%.0f%%' | format(edits.avg_edit_ratio * 100) if edits.avg_edit_ratio is not none else '—' }}</div><div class="label">Avg human edit</div></div>
+    <div class="stat"><div class="value">{{ edits.sent_verbatim }}</div><div class="label">Sent verbatim</div></div>
+  </div>
+  {% else %}<p class="muted">No human-reviewed drafts in the window yet.</p>{% endif %}
+</div>
 {% endblock %}

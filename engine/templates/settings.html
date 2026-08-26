@@ -48,6 +48,18 @@
       <button class="danger">Pause all outbound</button></form>
     {% endif %}
   </div>
+  <hr style="margin:16px 0;border:none;border-top:1px solid var(--line, #ddd)">
+  <form method="post" action="/settings/reply-approval">{{ csrf_field(request) }}
+    <label style="display:flex;gap:8px;align-items:center">
+      <input type="checkbox" name="require_reply_approval" value="true"
+             style="width:auto" {{ 'checked' if workspace.require_reply_approval }}>
+      Hold reply-agent responses for human review before sending
+    </label>
+    <p class="muted" style="margin:6px 0 10px">When unchecked, replies send
+      automatically. Escalated replies (pricing, legal, anger, out-of-playbook
+      questions) are always held regardless.</p>
+    <button class="secondary">Save reply policy</button>
+  </form>
 </div>
 
 <div class="panel">
@@ -143,11 +155,32 @@
   <p class="muted">Register each URL in the provider's dashboard and set the
     matching webhook signing secret in the credentials above. Webhooks without
     a configured secret are rejected. The Africa's Talking token is generated
-    automatically when you save its credentials.</p>
+    automatically when you save its credentials; the full URL (with the token)
+    is shown above to admins.</p>
 </div>
 
 <div class="panel">
   <h2>Team</h2>
+  {% if team is defined and team %}
+  <table style="margin-bottom:14px">
+    <tr><th>Email</th><th>Role</th><th>Last login</th><th></th></tr>
+    {% for member in team %}
+    <tr>
+      <td>{{ member.email }}{{ ' (you)' if member.id == user.id }}</td>
+      <td><span class="badge muted">{{ member.role }}</span>
+        {% if member.must_change_password %}<span class="badge warn">password change pending</span>{% endif %}</td>
+      <td class="muted">{{ member.last_login_at.strftime('%Y-%m-%d') if member.last_login_at else 'never' }}</td>
+      <td>
+        {% if user.role == 'admin' and member.id != user.id %}
+        <form class="inline" method="post" action="/settings/users/{{ member.id }}/reset-password"
+              onsubmit="return confirm('Issue a temporary password for {{ member.email }}? All their sessions will be signed out.')">{{ csrf_field(request) }}
+          <button class="secondary sm">Reset password</button></form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
   <form method="post" action="/settings/users">{{ csrf_field(request) }}
     <div class="grid cols-3">
       <div><label>Email</label><input type="email" name="email" required></div>
@@ -156,10 +189,19 @@
         <select name="role"><option value="operator">operator</option>
           <option value="admin">admin</option></select></div>
     </div>
-    <label>Temporary password (min 10 chars)</label>
+    <label>Temporary password (min 10 chars — they must replace it at first login)</label>
     <input type="password" name="password" minlength="10" required>
     <div style="margin-top:10px"><button class="secondary">Add user</button></div>
   </form>
+</div>
+
+<div class="panel">
+  <h2>Judge fine-tuning data</h2>
+  <p class="muted">Every human review (approve, reject, edit) is a labeled
+    example. Export them as JSONL to fine-tune a workspace-specific judge —
+    swap it in via the <span class="mono">local:</span> judge model above.</p>
+  <a href="/settings/export-judge-data"><button class="secondary" type="button">
+    Download judge_training_data.jsonl</button></a>
 </div>
 
 <div class="panel">

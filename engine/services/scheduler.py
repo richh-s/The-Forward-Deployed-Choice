@@ -17,6 +17,7 @@ from engine.auth import purge_expired_sessions
 from engine.config import get_settings
 from engine.db import db_session
 from engine.models import (
+    Booking,
     Campaign,
     DailyCounter,
     Prospect,
@@ -25,6 +26,7 @@ from engine.models import (
     utcnow,
 )
 from engine.queue import beat, enqueue, purge_old_jobs, recover_stuck_jobs
+from engine.services.enrichment import enrichment_configured
 from engine.services.killswitch import evaluate_killswitch
 from engine.services.suppression import SendBlocked, increment_daily_counter
 
@@ -57,20 +59,57 @@ async def _queued_today(db, campaign: Campaign) -> int:
     return int(row.scalar_one_or_none() or 0)
 
 
-async def _tick_campaign(db, campaign: Campaign) -> None:
+# Enrichment jobs enqueued per campaign per pass — enrichment doesn't count
+# against the campaign daily_cap (only composition does).
+ENRICH_BATCH = 50
+
+
+async def _tick_enrichment(db, campaign: Campaign) -> None:
+    """Queue signal enrichment for 'new' prospects when the workspace has an
+    enrichment source configured. Prospects come back 'enriched' (with
+    whatever signals the source produced) and get composed on a later pass."""
+    rows = await db.execute(
+        select(Prospect)
+        .where(
+            Prospect.campaign_id == campaign.id,
+            Prospect.stage == "new",
+        )
+        .order_by(Prospect.created_at)
+        .limit(ENRICH_BATCH)
+    )
+    for prospect in rows.scalars().all():
+        await enqueue(
+            db,
+            "enrich_prospect",
+            {
+                "workspace_id": campaign.workspace_id,
+                "prospect_id": prospect.id,
+            },
+            workspace_id=campaign.workspace_id,
+            # One enrichment per prospect; retries happen inside the job.
+            idempotency_key=f"enrich:{prospect.id}",
+        )
+
+
+async def _tick_campaign(db, campaign: Campaign, *, enrich: bool) -> None:
     """Move new/enriched prospects into composition, at most daily_cap per
     calendar day (tracked in DailyCounter — a 60s tick must not treat the
     cap as per-tick)."""
     if not _in_send_window(campaign):
         return
+    if enrich:
+        await _tick_enrichment(db, campaign)
     remaining = campaign.daily_cap - await _queued_today(db, campaign)
     if remaining <= 0:
         return
+    # With an enrichment source configured, 'new' prospects wait for their
+    # signals; without one they compose directly (inquiry mode, as before).
+    compose_stages = ["enriched"] if enrich else ["new", "enriched"]
     rows = await db.execute(
         select(Prospect)
         .where(
             Prospect.campaign_id == campaign.id,
-            Prospect.stage.in_(["new", "enriched"]),
+            Prospect.stage.in_(compose_stages),
         )
         .order_by(Prospect.created_at)
         .limit(remaining)
@@ -100,6 +139,11 @@ async def _tick_campaign(db, campaign: Campaign) -> None:
 
 
 async def _tick_followups(db, campaign: Campaign) -> None:
+    # Follow-ups honor the campaign send window just like first touches — a
+    # due follow-up outside the window simply waits for the next in-window
+    # pass (next_followup_at stays set until then).
+    if not _in_send_window(campaign):
+        return
     rows = await db.execute(
         select(Prospect).where(
             Prospect.campaign_id == campaign.id,
@@ -109,6 +153,16 @@ async def _tick_followups(db, campaign: Campaign) -> None:
         )
     )
     for prospect in rows.scalars().all():
+        if prospect.touch_count < 1:
+            # No recorded send (e.g. a manual stage change): there is nothing
+            # to follow up on, and steps[touch_count - 1] would silently wrap
+            # to the LAST sequence step. Clear the stray schedule instead.
+            logger.warning(
+                "Prospect %s has a follow-up scheduled but no sends; clearing",
+                prospect.id,
+            )
+            prospect.next_followup_at = None
+            continue
         touch = prospect.touch_count + 1
         steps = campaign.sequence or []
         angle = ""
@@ -130,12 +184,65 @@ async def _tick_followups(db, campaign: Campaign) -> None:
         prospect.next_followup_at = None  # re-set when the follow-up is sent
 
 
+# Reminders go out when a confirmed booking is this close.
+REMINDER_HOURS_AHEAD = 24
+
+
+async def _tick_reminders(db, workspace: Workspace) -> None:
+    """Queue SMS reminders for bookings starting within the next day."""
+    now = utcnow()
+    rows = await db.execute(
+        select(Booking).where(
+            Booking.workspace_id == workspace.id,
+            Booking.status.in_(["confirmed", "rescheduled"]),
+            Booking.prospect_id.is_not(None),
+            Booking.start_time.is_not(None),
+            Booking.start_time > now,
+            Booking.start_time <= now + timedelta(hours=REMINDER_HOURS_AHEAD),
+        )
+    )
+    for booking in rows.scalars().all():
+        await enqueue(
+            db,
+            "booking_reminder",
+            {
+                "workspace_id": workspace.id,
+                "prospect_id": booking.prospect_id,
+                "booking_id": booking.id,
+            },
+            workspace_id=workspace.id,
+            # One reminder per booking, ever (rescheduling changes nothing —
+            # the reminder reads the current start time when it runs).
+            idempotency_key=f"remind:{booking.id}",
+        )
+
+
+async def _tick_digest(db, workspace: Workspace) -> None:
+    """Queue the weekly ROI digest on Mondays, once per ISO week."""
+    settings = get_settings()
+    if not settings.weekly_digest_enabled:
+        return
+    now = utcnow()
+    if now.weekday() != 0:  # Monday
+        return
+    iso = now.isocalendar()
+    await enqueue(
+        db,
+        "weekly_digest",
+        {"workspace_id": workspace.id},
+        workspace_id=workspace.id,
+        idempotency_key=f"digest:{workspace.id}:{iso.year}-w{iso.week}",
+    )
+
+
 async def _process_workspace(workspace_id: str) -> None:
     async with db_session() as db:
         workspace = await db.get(Workspace, workspace_id)
         if workspace is None:
             return
         await evaluate_killswitch(db, workspace)
+        await _tick_reminders(db, workspace)
+        await _tick_digest(db, workspace)
         if workspace.outbound_paused:
             return
         campaigns = (
@@ -146,8 +253,9 @@ async def _process_workspace(workspace_id: str) -> None:
                 )
             )
         ).scalars().all()
+        enrich = await enrichment_configured(db, workspace.id)
         for campaign in campaigns:
-            await _tick_campaign(db, campaign)
+            await _tick_campaign(db, campaign, enrich=enrich)
             await _tick_followups(db, campaign)
 
 

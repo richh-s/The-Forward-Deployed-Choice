@@ -17,20 +17,35 @@ from engine.models import (
     Job,
     Message,
     Prospect,
+    User,
 )
-from engine.services.credentials import PROVIDER_FIELDS, configured_providers
+from engine.services.credentials import (
+    PROVIDER_FIELDS,
+    configured_providers,
+    get_credentials,
+)
 from engine.services.killswitch import compute_metrics
 from engine.templating import templates
 
 router = APIRouter()
 
 
-def _ctx(request: Request, auth: AuthContext, **extra) -> dict:
+async def _ctx(
+    request: Request, auth: AuthContext, db: AsyncSession, **extra
+) -> dict:
+    # Dead jobs are surfaced as a banner on every page (like a kill-switch
+    # pause) — nobody should have to poll /jobs to learn the pipeline broke.
+    dead_jobs = int((await db.execute(
+        select(func.count()).select_from(Job).where(
+            Job.workspace_id == auth.workspace.id, Job.status == "dead"
+        )
+    )).scalar_one())
     return {
         "user": auth.user,
         "workspace": auth.workspace,
         "live_mode": get_settings().live_mode,
         "msg": request.query_params.get("msg", ""),
+        "dead_jobs": dead_jobs,
         **extra,
     }
 
@@ -69,8 +84,8 @@ async def home(
     return templates.TemplateResponse(
         request,
         "home.html",
-        _ctx(
-            request, auth,
+        await _ctx(
+            request, auth, db,
             stages=PROSPECT_STAGES,
             stage_counts=stage_counts,
             pending_drafts=pending_drafts,
@@ -100,7 +115,7 @@ async def campaigns_page(
     counts: dict[str, int] = {cid: int(n) for cid, n in count_rows.all() if cid}
     return templates.TemplateResponse(
         request, "campaigns.html",
-        _ctx(request, auth, campaigns=campaigns, counts=counts),
+        await _ctx(request, auth, db, campaigns=campaigns, counts=counts),
     )
 
 
@@ -127,8 +142,8 @@ async def campaign_detail(
     )).scalars().all()
     return templates.TemplateResponse(
         request, "campaign_detail.html",
-        _ctx(
-            request, auth,
+        await _ctx(
+            request, auth, db,
             campaign=campaign,
             stage_counts=dict(stage_rows.all()),
             stages=PROSPECT_STAGES,
@@ -152,7 +167,7 @@ async def prospects_page(
     )).scalars().all()
     return templates.TemplateResponse(
         request, "prospects.html",
-        _ctx(request, auth, prospects=prospects, stages=PROSPECT_STAGES,
+        await _ctx(request, auth, db, prospects=prospects, stages=PROSPECT_STAGES,
              active_stage=stage),
     )
 
@@ -184,7 +199,7 @@ async def prospect_detail(
     )).scalars().all()
     return templates.TemplateResponse(
         request, "prospect_detail.html",
-        _ctx(request, auth, prospect=prospect, timeline=timeline,
+        await _ctx(request, auth, db, prospect=prospect, timeline=timeline,
              drafts=drafts, bookings=bookings, stages=PROSPECT_STAGES),
     )
 
@@ -206,7 +221,7 @@ async def approvals_page(
         .limit(100)
     )).all()
     return templates.TemplateResponse(
-        request, "approvals.html", _ctx(request, auth, rows=drafts)
+        request, "approvals.html", await _ctx(request, auth, db, rows=drafts)
     )
 
 
@@ -253,10 +268,18 @@ async def analytics_page(
         ("Warm / qualified", warm),
         ("Meetings booked", booked),
     ]
+    from engine.services import deliverability, learning
+
+    angles = await learning.angle_performance(db, ws_id)
+    calibration = await learning.judge_calibration(db, ws_id)
+    edits = await learning.edit_stats(db, ws_id)
+    delivery = await deliverability.summary(db, auth.workspace)
     return templates.TemplateResponse(
         request, "analytics.html",
-        _ctx(request, auth, metrics=metrics, funnel=funnel,
-             max_funnel=max([v for _, v in funnel] + [1])),
+        await _ctx(request, auth, db, metrics=metrics, funnel=funnel,
+             max_funnel=max([v for _, v in funnel] + [1]),
+             angles=angles, calibration=calibration, edits=edits,
+             delivery=delivery),
     )
 
 
@@ -282,7 +305,7 @@ async def jobs_page(
     )).scalars().all()
     return templates.TemplateResponse(
         request, "jobs.html",
-        _ctx(request, auth,
+        await _ctx(request, auth, db,
              status_counts=dict(status_rows.all()),
              problem_jobs=problem_jobs),
     )
@@ -303,19 +326,35 @@ async def settings_page(
         "reply": settings.reply_model,
         "judge": settings.judge_model,
     }
+    # The Africa's Talking webhook token is part of the URL the admin must
+    # register in the AT dashboard — render the real URL for admins (it is
+    # a URL auth token, not an API secret; without it the webhook can never
+    # be registered and inbound SMS silently fails verification).
+    at_url = f"{base_url}/webhooks/{slug}/sms/<webhook_token>"
+    if auth.user.role == "admin":
+        at_creds = await get_credentials(db, auth.workspace.id, "africastalking")
+        if at_creds and at_creds.get("webhook_token"):
+            at_url = f"{base_url}/webhooks/{slug}/sms/{at_creds['webhook_token']}"
     webhook_urls = {
         "Resend": f"{base_url}/webhooks/{slug}/resend",
         "Cal.com": f"{base_url}/webhooks/{slug}/calcom",
-        "Africa's Talking": f"{base_url}/webhooks/{slug}/sms/<webhook_token>",
+        "Africa's Talking": at_url,
         "Twilio voice": f"{base_url}/webhooks/{slug}/voice",
+        "Twilio WhatsApp": f"{base_url}/webhooks/{slug}/whatsapp",
     }
+    team = (await db.execute(
+        select(User)
+        .where(User.workspace_id == auth.workspace.id)
+        .order_by(User.created_at)
+    )).scalars().all()
     return templates.TemplateResponse(
         request, "settings.html",
-        _ctx(
-            request, auth,
+        await _ctx(
+            request, auth, db,
             provider_fields=PROVIDER_FIELDS,
             configured=providers,
             webhook_urls=webhook_urls,
+            team=team,
             llm_defaults=llm_defaults,
             local_llm_configured=bool(settings.local_llm_base_url),
             local_llm_base_url=settings.local_llm_base_url,

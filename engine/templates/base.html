@@ -47,6 +47,10 @@
         <div class="banner bad">Outbound is paused: {{ workspace.pause_reason }} —
           review in <a href="/settings">Settings</a>.</div>
       {% endif %}
+      {% if dead_jobs is defined and dead_jobs %}
+        <div class="banner bad">{{ dead_jobs }} background job{{ 's have' if dead_jobs != 1 else ' has' }}
+          permanently failed — review and retry on the <a href="/jobs">Jobs page</a>.</div>
+      {% endif %}
       {% block content %}{% endblock %}
     </div>
   </div>

@@ -12,7 +12,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from engine.config import get_settings
-from engine.models import AuditLog, Message, Prospect, Suppression, Workspace, utcnow
+from engine.models import (
+    AuditLog,
+    Draft,
+    Message,
+    Prospect,
+    Suppression,
+    Workspace,
+    utcnow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +51,22 @@ async def compute_metrics(db: AsyncSession, workspace: Workspace) -> dict:
             Suppression.created_at >= since,
         )
     )).scalar_one())
-    llm_cost = float((await db.execute(
+    # LLM spend where it is incurred: compose+judge cost lives on the Draft
+    # (counted whether or not the draft is ever sent — a compose→reject loop
+    # must still trip the ceiling); reply-agent cost lives on the Message.
+    # Sent drafts no longer copy their cost onto the Message, so the two
+    # sums don't double-count.
+    draft_cost = float((await db.execute(
+        select(func.coalesce(func.sum(Draft.compose_cost_usd), 0.0)).where(
+            Draft.workspace_id == workspace.id, Draft.created_at >= since
+        )
+    )).scalar_one())
+    message_cost = float((await db.execute(
         select(func.coalesce(func.sum(Message.cost_usd), 0.0)).where(
             Message.workspace_id == workspace.id, Message.created_at >= since
         )
     )).scalar_one())
+    llm_cost = draft_cost + message_cost
     qualified = int((await db.execute(
         select(func.count()).select_from(Prospect).where(
             Prospect.workspace_id == workspace.id,
@@ -146,5 +165,12 @@ async def evaluate_killswitch(db: AsyncSession, workspace: Workspace) -> list[st
         )
         logger.warning(
             "KILL-SWITCH paused workspace %s: %s", workspace.id, breaches
+        )
+        from engine.services import slack
+
+        await slack.notify(
+            db, workspace.id,
+            f"⛔ Kill-switch paused outbound for *{workspace.name}*: "
+            + "; ".join(breaches),
         )
     return breaches

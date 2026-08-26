@@ -44,6 +44,14 @@ credentials (encrypted at rest), suppression list, campaigns, and users.
 
 1. **Campaign tick** (scheduler): moves up to `daily_cap` new/enriched
    prospects per day, inside the campaign's send window, into composition.
+   With an **enrichment source** configured (Settings → credentials →
+   `enrichment`: an https endpoint receiving `POST {email, name, company,
+   title, phone}` and returning `{"signals": {...}}`), `new` prospects are
+   enriched first and only composed once their signals arrive; if the
+   source stays down through the retry budget, the prospect proceeds
+   unenriched (inquiry mode) rather than stalling. Operators can also
+   trigger **Compose draft now** from any prospect page to preview the
+   composer + judge without waiting for the scheduler.
 2. **compose_draft** job: Claude composes from the workspace playbook + the
    prospect's enrichment signals. The validated confidence-gating mechanism is
    preserved: average signal confidence ≥ 0.70 → assertion mode, otherwise
@@ -54,28 +62,84 @@ credentials (encrypted at rest), suppression list, campaigns, and users.
    regeneration with the judge's feedback.
 4. **Approval**: `require_approval=true` (default) puts the draft in the
    dashboard queue for human edit/approve/reject; otherwise drafts scoring
-   ≥ `auto_approve_score` go straight to send. Bulk approve is available.
+   ≥ `auto_approve_score` go straight to send. Bulk approve is available
+   (threshold clamped to [0, 1]; unjudged reply drafts are never bulk-
+   approved). Any pending draft can be **test-sent to the reviewer's own
+   address** (`[TEST]`-prefixed, no prospect contacted) to verify
+   credentials and rendering end to end. The approval card is
+   **evidence-linked**: per-dimension judge scores plus the composer's
+   claim→signal grounding notes alongside the raw signal brief — every
+   sentence is auditable before it sends. Approving records the **edit
+   distance** between the AI draft and what the human actually sent.
 5. **send_draft** job: policy checks (workspace pause → suppression list →
-   touch ceiling → daily cap), then Resend send with a per-prospect
-   unsubscribe link and RFC 8058 one-click unsubscribe headers. In sink mode
-   the recipient is replaced by `SINK_EMAIL` with the intended recipient in a
-   header.
+   touch ceiling → daily cap **shaped by domain warm-up** — a new sending
+   domain ramps from `WARMUP_START_PER_DAY` by `WARMUP_DAILY_GROWTH`×/day
+   toward the full cap, so early volume can't burn the domain), then Resend
+   send with a per-prospect unsubscribe link and RFC 8058 one-click
+   unsubscribe headers. In sink mode the recipient is replaced by
+   `SINK_EMAIL` with the intended recipient in a header.
 6. **Follow-ups**: the campaign sequence (`[{day_offset, angle}, ...]`)
    schedules the next touch; any inbound reply cancels the sequence.
+   Follow-ups honor the campaign send window (a due follow-up waits for the
+   next in-window pass), and a prospect with no recorded sends never gets a
+   follow-up composed against the wrong sequence step.
 
 ### The inbound pipeline
 
 - **Email replies** arrive via the Resend inbound webhook. **SMS** arrives via
-  Africa's Talking. STOP/START/HELP are handled synchronously (compliance);
-  everything else is recorded on the prospect's timeline and queued.
+  Africa's Talking. **WhatsApp** arrives via Twilio
+  (`/webhooks/{slug}/whatsapp`, signature-verified) — WhatsApp is a
+  *conversation* channel: the reply agent answers inside Meta's 24-hour
+  service window on the channel the prospect wrote on; cold outbound over
+  WhatsApp (which requires pre-approved templates) is deliberately not
+  offered. STOP/START/HELP are handled synchronously on every channel
+  (compliance); everything else is recorded on the prospect's timeline and
+  queued.
 - **inbound_message** job runs the reply agent (Claude, full conversation
   history, playbook-only facts): classifies intent (warm / question /
   objection / neutral / cold), drafts the channel-appropriate reply with the
   personalized Cal.com booking link, and flags escalations (pricing beyond
   public bands, legal, anger, out-of-playbook questions) to the dashboard.
+  The reply itself goes through the **same Draft gate as outreach**: by
+  default (`require_reply_approval`, per workspace in Settings) it lands in
+  the approval queue for human review; workspaces that opt into auto-send
+  still have **escalated replies always held** — model output produced from
+  attacker-controllable inbound text never reaches a prospect unreviewed
+  unless an admin explicitly chose that. Sending a reply never advances the
+  touch count or follow-up sequence.
 - **Cold intent** → both channels suppressed, prospect → `opted_out`, no reply.
 - **Cal.com webhook** (BOOKING_CREATED/CANCELLED/RESCHEDULED) records the
   booking, advances the prospect to `booked`, and queues the HubSpot update.
+  Confirmed bookings starting within 24h get an **SMS reminder** (no-show
+  reduction) — transactional, one per booking, suppression always honored.
+
+### The learning loop
+
+The pipeline reads its own outcomes back (Analytics → Learning):
+
+- **Angle performance**: replies and bookings attributed to the last touch
+  that preceded them, per campaign angle — promote what works.
+- **Judge calibration**: human approval rate and average edit per judge-score
+  band, with a recommended `auto_approve_score` once a band shows ≥95%
+  human approval on ≥10 reviewed drafts.
+- **Edit telemetry**: every approval records how much the human changed the
+  draft; trending toward zero means the composer has earned trust.
+- **Judge fine-tuning export** (Settings): reviewed drafts as JSONL —
+  signals + draft + API-judge verdict + the human decision as label — ready
+  to train a workspace-specific judge for the `local:` judge seam.
+
+### Operator notifications (Slack)
+
+Configure a Slack incoming webhook (Settings → credentials → slack) and the
+engine posts where operators live: drafts and replies awaiting review,
+escalations, kill-switch pauses, and the weekly digest. Best-effort — a
+Slack outage never fails a job.
+
+### Weekly digest
+
+Every Monday each workspace's admins receive an ROI digest (sends, replies,
+qualified leads, meetings, bounce/opt-out rates, LLM spend, cost per
+meeting) by email and Slack. `WEEKLY_DIGEST_ENABLED=false` turns it off.
 
 ## 1a. LLM backends (Claude + self-hosted local models)
 
@@ -122,7 +186,8 @@ tailnet — set it empty in a non-tailnet deploy to keep every role on Claude.
 
 | Concern | Implementation |
 |---|---|
-| Auth | DB-backed sessions (only the token hash is stored; sliding renewal, server-side expiry), bcrypt passwords hashed off the event loop, timing-equalized login (no user-enumeration oracle), login rate limiting (per IP and per IP+account), admin/operator roles, password change with revoke-all-sessions |
+| Auth | DB-backed sessions (only the token hash is stored; sliding renewal, server-side expiry, **absolute lifetime cap** — no cookie is immortal however active), bcrypt passwords hashed off the event loop, timing-equalized login (no user-enumeration oracle), login rate limiting (per IP and per IP+account), admin/operator roles, password change with revoke-all-sessions |
+| Account recovery | Admin-created users get a temporary password and **must set their own at first login** (enforced on every route until they do). Admins can issue a one-time temporary password for a locked-out teammate (shown once in the response body, never in a URL; all their sessions revoked). Sole-admin lockout: `python scripts/reset_admin_password.py --email …` against the database |
 | Bootstrap | One-shot `/setup`, additionally gated by a deploy-time `SETUP_TOKEN` in production and serialized with an advisory lock (no first-visitor-becomes-admin, no double-bootstrap race) |
 | CSRF | Every state-changing dashboard route requires a CSRF token (session-derived HMAC; double-submit cookie for the pre-login forms), enforced router-wide. Webhooks are signature-verified and cookie-free; the RFC 8058 unsubscribe POST is deliberately exempt |
 | Headers | `X-Frame-Options: DENY`, CSP with `frame-ancestors 'none'`, `X-Content-Type-Options`, `Referrer-Policy`, HSTS in production |
@@ -132,11 +197,11 @@ tailnet — set it empty in a non-tailnet deploy to keep every role on Claude.
 | Suppression | Durable DB table per (workspace, channel, address); written on STOP, unsubscribe, bounce, complaint, cold intent, manual action; checked before **every** send *and re-checked at the last instant before the provider call*. STOP confirmations bypass policy checks as required by carrier rules |
 | Unsubscribe | Every email carries `List-Unsubscribe` + one-click POST + a visible link to `/u/{token}`. The GET renders a confirmation page only (mail scanners prefetch links); the POST performs the write. Rate-limited |
 | Sink mode | `LIVE_MODE=false` (default) reroutes all outbound to `SINK_EMAIL`/`SINK_PHONE`. Missing sink → send refused, never silently delivered |
-| Kill-switch | Rolling 7-day opt-out rate, bounce rate, cost per qualified lead (20-send floor), **plus an absolute LLM spend ceiling** that trips even at zero conversions. Breach → workspace outbound paused + audit log; admin reviews and resumes in Settings |
-| Volume caps | Per-workspace daily email/SMS caps (atomic SQL increments — no race overshoot), campaign `daily_cap` enforced per calendar day, per-prospect touch ceiling (default 4) |
-| Credentials | Per-workspace provider secrets encrypted (Fernet, HKDF-derived key, `APP_SECRET_KEY_OLD` rotation path); write-validated per-provider field allowlist with https-only URLs (no SSRF via tenant config); never rendered back in the UI |
+| Kill-switch | Rolling 7-day opt-out rate, bounce rate, cost per qualified lead (20-send floor), **plus an absolute LLM spend ceiling** that trips even at zero conversions — and even at zero *sends*: compose/judge spend is counted on the Draft the moment it is incurred, so a compose→reject loop cannot burn budget invisibly. Breach → workspace outbound paused + audit log; admin reviews and resumes in Settings |
+| Volume caps | Per-workspace daily email/SMS/WhatsApp caps (atomic SQL increments — no race overshoot), campaign `daily_cap` enforced per calendar day, per-prospect touch ceiling (default 4), email cap additionally shaped by the domain warm-up ramp |
+| Credentials | Per-workspace provider secrets encrypted (Fernet, HKDF-derived key, `APP_SECRET_KEY_OLD` rotation path); write-validated per-provider field allowlist with https-only URLs (no SSRF via tenant config); never rendered back in the UI. One deliberate exception: the Africa's Talking **webhook URL token** (URL auth, not an API secret) is shown to admins in the registered-URL list — without it the webhook could never be registered |
 | PII deletion | `POST /prospects/{id}/delete` (admin) erases the prospect and their messages/drafts/bookings while keeping the suppression entry (the lawful basis for honoring the opt-out) |
-| Cost tracking | Real per-model pricing on every LLM call, stored per message, aggregated in Analytics |
+| Cost tracking | Real per-model pricing on every LLM call, stored where it is incurred (compose+judge on the Draft, reply-agent cost on the reply Draft), aggregated in Analytics and the kill-switch |
 | Audit trail | Login success/failure, setup, campaign status, approvals/bulk-approve, credential & model changes, kill-switch pauses, job retries, PII deletions |
 
 ## 3. Local development
@@ -218,6 +283,9 @@ Notes:
 - [ ] Kill-switch thresholds reviewed per workspace (Settings → stored on the
       workspace; defaults in env).
 - [ ] Approval mode ON for every campaign until judge scores are trusted.
+- [ ] Reply approval ON (the default) until the reply agent's answers are
+      trusted — and note escalated replies are held even after opting into
+      auto-send.
 - [ ] Sink-mode dry run: a full campaign against the staff sink, reviewing
       drafts, judge scores, and the reply agent's answers.
 - [ ] Data-handling sign-off from the client (this replaces the challenge-week
@@ -235,21 +303,33 @@ Notes:
 | Emails in spam | — | Verified domain, warm-up, lower daily cap; check bounce rate in Analytics |
 
 Dead jobs (`status='dead'`) keep their full traceback and never re-run on
-their own; requeue them from the **Jobs** page (resets the attempt budget)
-after fixing the cause. Every failure is also in the JSON logs (searchable
-by `request_id`) and in Sentry when `SENTRY_DSN` is set.
+their own; a red banner on every dashboard page counts them, and the
+transition to dead is logged at **error** level (so log-based alerting and
+Sentry fire). Deterministic model failures (a refusal, output truncated at
+`max_tokens`) dead-letter on the first attempt instead of re-billing the
+same prompt five times. Requeue dead jobs from the **Jobs** page (resets
+the attempt budget) after fixing the cause. Every failure is also in the
+JSON logs (searchable by `request_id`) and in Sentry when `SENTRY_DSN` is
+set.
 
 ## 7. Extension points
 
-- **Live enrichment**: `Prospect.signals` is the contract — a JSON object of
-  named signals with `confidence` (high/medium/low). Wire the existing
-  `enrichment/` pipeline (or any source) to populate it and set
-  `stage='enriched'`; nothing downstream changes.
-- **WhatsApp channel**: add a sender in `engine/services/`, a webhook route,
-  and a `channel` value — suppression, caps, and the reply agent are already
-  channel-generic.
-- **Fine-tuned judge**: `engine/services/judge.py` is the seam; swap the API
-  judge for the Week-11 LoRA critic behind the same `judge_draft()` signature.
+- **Live enrichment** (wired): `Prospect.signals` is the contract — a JSON
+  object of named signals with `confidence` (high/medium/low). Point the
+  workspace `enrichment` credential at any https endpoint implementing
+  `POST {email, name, company, title, phone} → {"signals": {...}}` and the
+  scheduler enriches `new` prospects before composing them. To use the
+  research `enrichment/` pipeline, expose `enrich_company()` behind such an
+  endpoint. CSV rows with a `signals` column and the per-prospect signals
+  editor keep working as manual sources.
+- **WhatsApp cold outbound**: the conversational WhatsApp channel is live
+  (inbound + replies via Twilio); adding template-based cold touches means
+  registering Meta-approved templates and a `whatsapp` campaign channel —
+  suppression, caps, and sink mode already handle the channel.
+- **Fine-tuned judge**: `engine/services/judge.py` is the seam; the
+  Settings → judge fine-tuning export produces the labeled training data,
+  and the Week-11 LoRA critic swaps in behind the same `judge_draft()`
+  signature (serve it via `JUDGE_MODEL=local:<name>`).
 - **Voice**: TwiML endpoints are live (signature-verified); outbound dialing
   can be added as a job type.
 

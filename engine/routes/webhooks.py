@@ -277,6 +277,102 @@ async def sms_webhook(
     return {"status": "queued"}
 
 
+# ── Twilio WhatsApp (inbound conversation) ───────────────────────────
+
+
+@router.post("/webhooks/{slug}/whatsapp")
+async def whatsapp_webhook(
+    slug: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Inbound WhatsApp via Twilio. Same compliance-first shape as SMS:
+    STOP/START/HELP handled synchronously, everything else queued for the
+    reply agent (which answers on WhatsApp inside the 24h service window)."""
+    from engine.services.whatsapp import send_whatsapp
+
+    workspace = await _workspace_by_slug(db, slug)
+    form = {k: str(v) for k, v in (await request.form()).items()}
+    creds = await get_credentials(db, workspace.id, "twilio") or {}
+    verify_twilio(
+        creds.get("auth_token"),
+        request.headers.get("X-Twilio-Signature"),
+        str(request.url),
+        form,
+    )
+
+    text = form.get("Body", "").strip()
+    phone = normalize_phone(form.get("From", "").removeprefix("whatsapp:"))
+    sid = form.get("MessageSid", "")
+    if not phone:
+        return {"status": "ignored"}
+    if not sid:
+        sid = _body_fingerprint(slug, phone, text, form.get("To", ""))
+    if not await _claim_event(db, "twilio_whatsapp", sid):
+        return {"status": "duplicate"}
+
+    command = text.upper().strip()
+    if command in OPT_OUT_COMMANDS:
+        await suppress(db, workspace.id, "whatsapp", phone, "opt_out")
+        try:
+            await send_whatsapp(
+                db, workspace, None, to_phone=phone,
+                body="You have been unsubscribed. Reply START to resubscribe.",
+                skip_policy_checks=True,
+            )
+        except Exception as exc:  # noqa: BLE001 — confirmation is best-effort
+            logger.warning("WhatsApp opt-out confirmation failed: %s", exc)
+        return {"status": "opted_out"}
+    if command == "START":
+        await unsuppress(db, workspace.id, "whatsapp", phone)
+        return {"status": "resubscribed"}
+    if command == "HELP":
+        support = (workspace.playbook or {}).get("support_contact", "")
+        try:
+            await send_whatsapp(
+                db, workspace, None, to_phone=phone,
+                body=f"Reply STOP to unsubscribe. {('Contact ' + support) if support else ''}".strip(),
+                skip_policy_checks=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("WhatsApp HELP reply failed: %s", exc)
+        return {"status": "help_sent"}
+
+    row = await db.execute(
+        select(Prospect).where(
+            Prospect.workspace_id == workspace.id, Prospect.phone == phone
+        )
+    )
+    prospect = row.scalars().first()
+    if prospect is None:
+        logger.info("Inbound WhatsApp from unknown number; ignored")
+        return {"status": "unknown_sender"}
+
+    inbound = Message(
+        workspace_id=workspace.id,
+        prospect_id=prospect.id,
+        channel="whatsapp",
+        direction="in",
+        body=text[:2000],
+    )
+    db.add(inbound)
+    await db.flush()
+    await enqueue(
+        db,
+        "inbound_message",
+        {
+            "workspace_id": workspace.id,
+            "prospect_id": prospect.id,
+            "channel": "whatsapp",
+            "text": text[:2000],
+            "message_id": inbound.id,
+        },
+        workspace_id=workspace.id,
+        idempotency_key=f"inbound:{inbound.id}",
+    )
+    return {"status": "queued"}
+
+
 # ── Cal.com (booking lifecycle) ──────────────────────────────────────
 
 
@@ -416,6 +512,9 @@ async def _apply_unsubscribe(db: AsyncSession, prospect: Prospect) -> None:
     await suppress(db, prospect.workspace_id, "email", prospect.email, "opt_out")
     if prospect.phone:
         await suppress(db, prospect.workspace_id, "sms", prospect.phone, "opt_out")
+        await suppress(
+            db, prospect.workspace_id, "whatsapp", prospect.phone, "opt_out"
+        )
     prospect.stage = "opted_out"
     prospect.next_followup_at = None
 

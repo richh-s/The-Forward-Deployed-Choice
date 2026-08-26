@@ -149,9 +149,13 @@ async def check_can_send(
             f"Prospect reached the touch ceiling "
             f"({settings.max_touches_per_prospect})"
         )
-    cap = (
-        settings.max_emails_per_day_per_workspace
-        if channel == "email"
-        else settings.max_sms_per_day_per_workspace
-    )
+    if channel == "email":
+        # Deliverability warm-up: new domains ramp toward the full cap.
+        from engine.services.deliverability import warmup_email_cap
+
+        cap = await warmup_email_cap(db, workspace)
+    elif channel == "whatsapp":
+        cap = settings.max_whatsapp_per_day_per_workspace
+    else:
+        cap = settings.max_sms_per_day_per_workspace
     await increment_daily_counter(db, workspace.id, channel, cap)

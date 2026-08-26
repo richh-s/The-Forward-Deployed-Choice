@@ -32,25 +32,56 @@
       <span class="av">{{ (prospect.name or prospect.email)[:2] }}</span>
       <div>
         <div class="nm"><a href="/prospects/{{ prospect.id }}">{{ prospect.name or prospect.email }}</a></div>
-        <div class="muted" style="font-size:12px">{{ prospect.company }} · touch #{{ draft.touch_number }}
+        <div class="muted" style="font-size:12px">{{ prospect.company }}
+          {% if draft.kind == 'reply' %}
+          · <span class="badge warn">reply · {{ draft.channel }}</span>
+          {% else %}
+          · touch #{{ draft.touch_number }}
           · <span class="badge muted">{{ draft.mode }}</span>
-          · confidence {{ '%.2f' | format(draft.avg_confidence or 0) }}</div>
+          · confidence {{ '%.2f' | format(draft.avg_confidence or 0) }}
+          {% endif %}</div>
       </div>
     </div>
-    {% set score = draft.judge_score or 0 %}
+    {% if draft.judge_score is not none %}
+    {% set score = draft.judge_score %}
     <span class="badge {{ 'good' if score >= 0.8 else ('warn' if score >= 0.6 else 'bad') }}">
       Judge {{ '%.2f' | format(score) }}</span>
+    {% else %}
+    <span class="badge muted">reply — human review</span>
+    {% endif %}
   </div>
+  {% if draft.judge_scores %}
+  <div class="row" style="gap:6px;flex-wrap:wrap;margin:0 0 8px">
+    {% for dim, val in draft.judge_scores.items() %}
+    <span class="badge {{ 'good' if val >= 0.8 else ('warn' if val >= 0.6 else 'bad') }}"
+          title="{{ dim }}">{{ dim | replace('_', ' ') }} {{ '%.1f' | format(val) }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% if draft.judge_feedback %}
   <p class="subtle" style="margin:0 0 12px">Judge: {{ draft.judge_feedback }}</p>
   {% endif %}
+  {% if draft.grounding_notes %}
+  <details style="margin:0 0 12px">
+    <summary class="muted">Evidence — which signals back each claim</summary>
+    <pre style="white-space:pre-wrap;font-size:12px;margin:6px 0 0">{{ draft.grounding_notes }}</pre>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">Signal brief:</p>
+    <pre style="white-space:pre-wrap;font-size:12px;margin:0">{{ prospect.signals | tojson(indent=2) }}</pre>
+  </details>
+  {% endif %}
   <form method="post" action="/approvals/{{ draft.id }}/approve">{{ csrf_field(request) }}
+    {% if draft.channel != 'sms' %}
     <label>Subject</label>
     <input name="subject" value="{{ draft.subject }}" required>
+    {% endif %}
     <label>Body <span class="muted">(editable before send)</span></label>
     <textarea name="body" style="min-height:150px" required>{{ draft.body }}</textarea>
     <div class="row" style="margin-top:12px; justify-content:space-between">
-      <button>Approve &amp; send</button>
+      <span class="row" style="gap:8px">
+        <button>Approve &amp; send</button>
+        <button form="test-{{ draft.id }}" class="secondary"
+          title="Email this draft to yourself — no prospect is contacted">Send test to me</button>
+      </span>
       <span class="row" style="gap:8px">
         <input form="reject-{{ draft.id }}" name="reason" placeholder="Rejection reason (optional)" style="width:260px">
         <button form="reject-{{ draft.id }}" class="danger secondary" style="color:var(--bad);border-color:var(--red-ring)">Reject</button>
@@ -58,6 +89,7 @@
     </div>
   </form>
   <form id="reject-{{ draft.id }}" method="post" action="/approvals/{{ draft.id }}/reject">{{ csrf_field(request) }}</form>
+  <form id="test-{{ draft.id }}" method="post" action="/approvals/{{ draft.id }}/test-send">{{ csrf_field(request) }}</form>
 </div>
 {% endfor %}
 {% endblock %}

@@ -65,6 +65,12 @@ def _channel_style(channel: str) -> str:
             "SMS: at most 300 characters, plain text, no links other than the "
             "booking link, always end with 'Reply STOP to opt out.'"
         )
+    if channel == "whatsapp":
+        return (
+            "WhatsApp: at most 500 characters, conversational but professional, "
+            "no links other than the booking link, always end with "
+            "'Reply STOP to opt out.'"
+        )
     return "Email: at most 120 words, plain text, professional and warm."
 
 
@@ -77,7 +83,7 @@ async def conversation_history(
         .where(
             Message.workspace_id == prospect.workspace_id,
             Message.prospect_id == prospect.id,
-            Message.channel.in_(["email", "sms"]),
+            Message.channel.in_(["email", "sms", "whatsapp"]),
         )
         .order_by(Message.created_at.desc())
         .limit(limit)
