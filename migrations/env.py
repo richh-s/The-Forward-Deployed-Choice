@@ -18,10 +18,16 @@ target_metadata = Base.metadata
 
 
 def _sync_url() -> str:
+    """Map whatever DATABASE_URL form we're given (Render's driverless
+    postgres://, the app's postgresql+asyncpg://, sqlite+aiosqlite://) to the
+    sync driver Alembic runs on (psycopg2 / built-in sqlite)."""
     url = os.environ.get("DATABASE_URL") or get_settings().database_url
-    return url.replace("+asyncpg", "+psycopg2").replace(
-        "+aiosqlite", ""
-    ).replace("postgresql+psycopg2", "postgresql")
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    url = url.replace("+asyncpg", "").replace("+aiosqlite", "")
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg2://" + url[len("postgresql://"):]
+    return url
 
 
 def run_migrations_offline() -> None:

@@ -1,11 +1,13 @@
-# Product dependencies (the engine/ package + server.py). Python 3.10+.
+# Product dependencies (the engine/ package + server.py). Python 3.11+
+# (see .python-version / pyproject.toml [project] requires-python).
 # Research/coursework tooling lives in requirements-research.txt.
 fastapi==0.141.1
 uvicorn[standard]==0.52.4
 python-multipart==0.0.32
 jinja2==3.1.6
 sqlalchemy[asyncio]==2.0.52
-asyncpg==0.31.0
+asyncpg==0.31.0          # async driver (app)
+psycopg2-binary==2.9.12  # sync driver (alembic migrations)
 aiosqlite==0.22.1
 alembic==1.19.1
 pydantic-settings==2.15.0
@@ -16,3 +18,4 @@ tenacity==9.1.4
 bcrypt==5.0.0
 cryptography==50.0.0
 python-dotenv==1.2.3
+sentry-sdk[fastapi]==2.42.1  # error tracking; active only when SENTRY_DSN is set

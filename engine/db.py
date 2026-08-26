@@ -20,14 +20,39 @@ _engine = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
 
+def normalize_async_url(url: str) -> str:
+    """Managed platforms (Render, Heroku) hand out driverless
+    `postgres://`/`postgresql://` URLs; the async engine needs asyncpg."""
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+    return url
+
+
 def get_engine():
     global _engine, _sessionmaker
     if _engine is None:
         settings = get_settings()
-        kwargs: dict = {"pool_pre_ping": True}
-        if settings.database_url.startswith("sqlite"):
-            kwargs.pop("pool_pre_ping")
-        _engine = create_async_engine(settings.database_url, **kwargs)
+        url = normalize_async_url(settings.database_url)
+        if url.startswith("sqlite"):
+            kwargs: dict = {"connect_args": {"timeout": 30}}
+        else:
+            kwargs = {
+                "pool_pre_ping": True,
+                "pool_size": settings.db_pool_size,
+                "max_overflow": settings.db_max_overflow,
+                "pool_recycle": settings.db_pool_recycle_seconds,
+                "pool_timeout": settings.db_pool_timeout_seconds,
+                "connect_args": {
+                    "server_settings": {
+                        "statement_timeout": str(
+                            settings.db_statement_timeout_ms
+                        ),
+                    },
+                },
+            }
+        _engine = create_async_engine(url, **kwargs)
         _sessionmaker = async_sessionmaker(
             _engine, expire_on_commit=False, autoflush=False
         )
