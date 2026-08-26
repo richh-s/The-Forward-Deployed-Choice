@@ -40,6 +40,21 @@ async def destroy_session(db: AsyncSession, token: str) -> None:
     )
 
 
+async def destroy_all_sessions(db: AsyncSession, user_id: str) -> int:
+    """Log the user out everywhere (post-compromise / password change)."""
+    result = await db.execute(
+        delete(AuthSession).where(AuthSession.user_id == user_id)
+    )
+    return result.rowcount or 0
+
+
+async def purge_expired_sessions(db: AsyncSession) -> int:
+    result = await db.execute(
+        delete(AuthSession).where(AuthSession.expires_at < utcnow())
+    )
+    return result.rowcount or 0
+
+
 async def _resolve_session(db: AsyncSession, token: str) -> AuthContext | None:
     row = await db.execute(
         select(AuthSession).where(
@@ -49,6 +64,11 @@ async def _resolve_session(db: AsyncSession, token: str) -> AuthContext | None:
     session = row.scalar_one_or_none()
     if session is None or as_aware(session.expires_at) < utcnow():
         return None
+    # Sliding renewal: keep active users logged in without ever handing out
+    # an immortal cookie — each use pushes expiry out to a fresh TTL.
+    ttl = timedelta(hours=get_settings().session_ttl_hours)
+    if as_aware(session.expires_at) - utcnow() < ttl / 2:
+        session.expires_at = utcnow() + ttl
     user = await db.get(User, session.user_id)
     if user is None or not user.is_active:
         return None

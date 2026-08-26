@@ -1,15 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Log in{% endblock %}
-{% block content %}
-<div class="panel auth-card">
-  <h2>Log in</h2>
+{% block auth %}
+<div class="auth-card">
+  <span class="logo"><span class="mark">10<sup>ac</sup></span> Conversion Engine</span>
+  <h2>Welcome back</h2>
+  <p class="muted" style="margin:0 0 8px">Log in to your workspace.</p>
   {% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
-  <form method="post" action="/login">
+  <form method="post" action="/login"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Email</label>
-    <input type="email" name="email" required autofocus>
+    <input type="email" name="email" required autofocus placeholder="you@company.com">
     <label>Password</label>
-    <input type="password" name="password" required>
-    <div style="margin-top:14px"><button>Log in</button></div>
+    <input type="password" name="password" required placeholder="••••••••••">
+    <button>Log in</button>
   </form>
 </div>
 {% endblock %}

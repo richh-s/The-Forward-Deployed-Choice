@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Jobs{% endblock %}
+{% block content %}
+<div class="grid stats">
+  {% for status in ["pending", "running", "done", "failed", "dead"] %}
+  <div class="card stat">
+    <div class="stat-label">{{ status }}</div>
+    <div class="stat-value">{{ status_counts.get(status, 0) }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h3>Failing &amp; dead jobs</h3>
+  {% if not problem_jobs %}
+  <p class="muted">Nothing failing — the queue is healthy.</p>
+  {% else %}
+  <table>
+    <thead>
+      <tr><th>Type</th><th>Status</th><th>Attempts</th><th>Last error</th>
+          <th>Updated</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for job in problem_jobs %}
+      <tr>
+        <td><code>{{ job.type }}</code></td>
+        <td><span class="badge {{ 'bad' if job.status == 'dead' else 'warn' }}">{{ job.status }}</span></td>
+        <td>{{ job.attempts }}/{{ job.max_attempts }}</td>
+        <td class="muted" style="max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            title="{{ job.last_error[:1000] }}">{{ job.last_error[:160] }}</td>
+        <td class="muted">{{ job.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>
+          {% if user.role == "admin" %}
+          <form class="inline" method="post" action="/jobs/{{ job.id }}/retry">{{ csrf_field(request) }}
+            <button class="secondary sm">Retry</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

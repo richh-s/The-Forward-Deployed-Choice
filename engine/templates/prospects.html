@@ -1,30 +1,56 @@
 {% extends "base.html" %}
 {% block title %}Prospects{% endblock %}
 {% block content %}
-<div class="panel">
-  <div class="row" style="justify-content:space-between">
-    <h2 style="margin:0">Prospects</h2>
-    <div class="row">
-      <a class="btn secondary {{ 'active' if not active_stage }}" href="/prospects">All</a>
-      {% for s in stages %}
-      <a class="badge {{ '' if active_stage == s else 'muted' }}" href="/prospects?stage={{ s }}">{{ s }}</a>
-      {% endfor %}
-    </div>
+<div class="page-head">
+  <div>
+    <h1>Prospects</h1>
+    <div class="sub">{{ prospects | length }} shown{% if active_stage %} · filtered by
+      <strong>{{ active_stage.replace('_', ' ') }}</strong>{% endif %}</div>
   </div>
+  <a class="btn" href="/campaigns">Import prospects</a>
+</div>
+
+<div class="panel" style="padding:14px 16px">
+  <div class="segmented">
+    <a class="{{ 'active' if not active_stage }}" href="/prospects">All</a>
+    {% for s in stages %}
+    <a class="{{ 'active' if active_stage == s }}" href="/prospects?stage={{ s }}">{{ s.replace('_', ' ') }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="panel">
   {% if prospects %}
-  <table style="margin-top:12px">
-    <tr><th>Name</th><th>Company</th><th>Email</th><th>Stage</th><th>Touches</th><th>Updated</th></tr>
+  <div class="table-wrap"><table>
+    <tr><th>Name</th><th>Company</th><th>Email</th><th>Stage</th><th>Confidence</th><th>Touches</th><th>Updated</th></tr>
     {% for p in prospects %}
     <tr>
-      <td><a href="/prospects/{{ p.id }}">{{ p.name or '—' }}</a></td>
+      <td>
+        <a class="who" href="/prospects/{{ p.id }}">
+          <span class="av">{{ (p.name or p.email)[:2] }}</span>
+          <span class="nm">{{ p.name or '—' }}</span>
+        </a>
+      </td>
       <td>{{ p.company or '—' }}</td>
       <td class="mono">{{ p.email }}</td>
-      <td><span class="badge">{{ p.stage }}</span></td>
+      <td><span class="badge {{ 'good' if p.stage in ['warm','booked'] else ('bad' if p.stage in ['lost','opted_out'] else 'muted') }}">{{ p.stage.replace('_',' ') }}</span></td>
+      <td>{{ '%.2f' | format(p.avg_confidence) if p.avg_confidence is not none else '—' }}</td>
       <td>{{ p.touch_count }}</td>
-      <td class="muted">{{ p.updated_at.strftime('%Y-%m-%d') }}</td>
+      <td class="muted">{{ p.updated_at.strftime('%b %d') }}</td>
     </tr>
     {% endfor %}
-  </table>
-  {% else %}<p class="muted" style="margin-top:12px">No prospects match.</p>{% endif %}
+  </table></div>
+  {% else %}
+  <div class="empty">
+    <div class="icon">◉</div>
+    <h3>No prospects{{ ' in this stage' if active_stage else ' yet' }}</h3>
+    <p>{% if active_stage %}Nothing is sitting in the
+      <strong>{{ active_stage.replace('_',' ') }}</strong> stage right now.
+      {% else %}Create a campaign and import a prospect list (CSV) to start
+      building your pipeline.{% endif %}</p>
+    {% if active_stage %}<a class="btn secondary" href="/prospects">Clear filter</a>
+    {% else %}<a class="btn" href="/campaigns">Go to campaigns</a>{% endif %}
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

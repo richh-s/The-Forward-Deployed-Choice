@@ -11,7 +11,7 @@
         {% if prospect.phone %} · <span class="mono">{{ prospect.phone }}</span>{% endif %}
       </div>
     </div>
-    <form class="inline row" method="post" action="/prospects/{{ prospect.id }}/stage">
+    <form class="inline row" method="post" action="/prospects/{{ prospect.id }}/stage">{{ csrf_field(request) }}
       <select name="stage" style="width:auto">
         {% for s in stages %}<option value="{{ s }}" {{ 'selected' if s == prospect.stage }}>{{ s }}</option>{% endfor %}
       </select>
@@ -80,7 +80,7 @@
 
     <div class="panel">
       <h2>Enrichment signals</h2>
-      <form method="post" action="/prospects/{{ prospect.id }}/signals">
+      <form method="post" action="/prospects/{{ prospect.id }}/signals">{{ csrf_field(request) }}
         <textarea name="signals_json" class="mono" style="min-height:160px">{{ prospect.signals | tojson(indent=2) }}</textarea>
         <div style="margin-top:8px"><button class="secondary">Save signals</button></div>
       </form>

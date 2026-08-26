@@ -8,8 +8,14 @@ per-workspace secret URL token instead.
 import base64
 import hashlib
 import hmac
+import time
 
 from fastapi import HTTPException
+
+# Svix spec: reject webhooks whose timestamp is outside ±5 minutes, so a
+# captured request can't be replayed forever (the WebhookEvent ledger only
+# holds ids for the retention window).
+SVIX_TOLERANCE_SECONDS = 300
 
 
 def _forbid(detail: str) -> HTTPException:
@@ -28,6 +34,12 @@ def verify_svix(
         raise _forbid("Resend webhook secret not configured")
     if not all([svix_id, svix_timestamp, svix_signature]):
         raise _forbid("Missing Svix signature headers")
+    try:
+        ts = float(svix_timestamp)
+    except ValueError as exc:
+        raise _forbid("Malformed Svix timestamp") from exc
+    if abs(time.time() - ts) > SVIX_TOLERANCE_SECONDS:
+        raise _forbid("Svix timestamp outside tolerance")
     to_sign = f"{svix_id}.{svix_timestamp}.".encode() + payload
     try:
         raw_key = base64.b64decode(secret.removeprefix("whsec_"))

@@ -11,23 +11,36 @@ import secrets
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from engine.auth import AuthContext, current_admin, current_auth
+from engine.auth import (
+    AuthContext,
+    current_admin,
+    current_auth,
+    destroy_all_sessions,
+)
 from engine.db import get_db
 from engine.models import (
     PROSPECT_STAGES,
     AuditLog,
+    Booking,
     Campaign,
     Draft,
+    Message,
     Prospect,
     User,
     utcnow,
 )
 from engine.queue import enqueue
-from engine.security import hash_password
-from engine.services.credentials import PROVIDER_FIELDS, set_credentials
+from engine.security import hash_password_async, verify_password_async
+from engine.services.credentials import (
+    PROVIDER_FIELDS,
+    CredentialValidationError,
+    set_credentials,
+    validate_credential_payload,
+)
 from engine.services.suppression import suppress
 from engine.validation import valid_email, valid_phone
 
@@ -239,6 +252,10 @@ async def approve_draft(
     draft.subject = subject.strip()[:500]
     draft.body = body.strip()
     await _approve_draft(db, auth, draft)
+    db.add(AuditLog(
+        workspace_id=auth.workspace.id, user_id=auth.user.id,
+        action="draft_approved", detail={"draft_id": draft.id},
+    ))
     return _redirect("/approvals", "Approved and queued for send")
 
 
@@ -276,6 +293,11 @@ async def bulk_approve(
     for draft in rows.scalars().all():
         await _approve_draft(db, auth, draft)
         count += 1
+    if count:
+        db.add(AuditLog(
+            workspace_id=auth.workspace.id, user_id=auth.user.id,
+            action="bulk_approve", detail={"count": count, "min_score": min_score},
+        ))
     return _redirect("/approvals", f"Approved {count} drafts scoring ≥ {min_score}")
 
 
@@ -301,6 +323,36 @@ async def set_prospect_stage(
     return _redirect(f"/prospects/{prospect.id}", f"Stage set to {stage}")
 
 
+@router.post("/prospects/{prospect_id}/delete")
+async def delete_prospect(
+    prospect_id: str,
+    auth: AuthContext = Depends(current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Erase a prospect's personal data (GDPR/CCPA deletion).
+
+    Removes the prospect row and their message/draft/booking content.
+    The suppression entry is intentionally KEPT — retaining the address on
+    the do-not-contact list is the lawful basis for honoring the opt-out."""
+    prospect = await _own_prospect(db, auth, prospect_id)
+    email = prospect.email
+    # Keep them un-contactable even after erasure.
+    await suppress(db, auth.workspace.id, "email", email, "manual")
+    if prospect.phone:
+        await suppress(db, auth.workspace.id, "sms", prospect.phone, "manual")
+    for model in (Message, Draft, Booking):
+        await db.execute(sa_delete(model).where(
+            model.workspace_id == auth.workspace.id,
+            model.prospect_id == prospect.id,
+        ))
+    await db.delete(prospect)
+    db.add(AuditLog(
+        workspace_id=auth.workspace.id, user_id=auth.user.id,
+        action="prospect_deleted", detail={"prospect_id": prospect_id},
+    ))
+    return _redirect("/prospects", "Prospect data erased")
+
+
 @router.post("/prospects/{prospect_id}/signals")
 async def set_prospect_signals(
     prospect_id: str,
@@ -318,6 +370,33 @@ async def set_prospect_signals(
     if prospect.stage == "new" and signals:
         prospect.stage = "enriched"
     return _redirect(f"/prospects/{prospect.id}", "Signals updated")
+
+
+# ── jobs (queue operations) ──────────────────────────────────────────
+
+
+@router.post("/jobs/{job_id}/retry")
+async def retry_job(
+    job_id: str,
+    auth: AuthContext = Depends(current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from engine.models import Job
+
+    job = await db.get(Job, job_id)
+    if job is None or job.workspace_id != auth.workspace.id:
+        raise HTTPException(status_code=404)
+    if job.status not in ("failed", "dead"):
+        return _redirect("/jobs", "Only failed or dead jobs can be retried")
+    if job.status == "dead":
+        job.attempts = 0  # dead jobs get a fresh budget after a manual fix
+    job.status = "failed"
+    job.run_after = utcnow()
+    db.add(AuditLog(
+        workspace_id=auth.workspace.id, user_id=auth.user.id,
+        action="job_retried", detail={"job_id": job.id, "type": job.type},
+    ))
+    return _redirect("/jobs", "Job requeued")
 
 
 # ── settings (admin) ─────────────────────────────────────────────────
@@ -420,7 +499,10 @@ async def update_credentials(
         assert isinstance(payload, dict)
     except (ValueError, AssertionError):
         return _redirect("/settings", "Credentials must be a JSON object")
-    payload = {k: str(v) for k, v in payload.items() if v}
+    try:
+        payload = validate_credential_payload(provider, payload)
+    except CredentialValidationError as exc:
+        return _redirect("/settings", str(exc))
     # Auto-generate the webhook URL token for Africa's Talking.
     if provider == "africastalking" and "webhook_token" not in payload:
         payload["webhook_token"] = secrets.token_urlsafe(24)
@@ -476,12 +558,41 @@ async def add_user(
         role = "operator"
     exists = (await db.execute(select(User).where(User.email == addr))).first()
     if exists:
-        return _redirect("/settings", "A user with that email already exists")
+        # Generic message — don't confirm whether an address (possibly from
+        # another tenant) has an account here.
+        return _redirect("/settings", "Could not create that user")
     db.add(User(
         workspace_id=auth.workspace.id,
         email=addr,
         name=name.strip()[:200],
-        password_hash=hash_password(password),
+        password_hash=await hash_password_async(password),
         role=role,
     ))
+    db.add(AuditLog(
+        workspace_id=auth.workspace.id, user_id=auth.user.id,
+        action="user_added", detail={"email": addr, "role": role},
+    ))
     return _redirect("/settings", f"User {addr} added")
+
+
+@router.post("/settings/password")
+async def change_password(
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    auth: AuthContext = Depends(current_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change own password; revokes every other session for the account."""
+    if not await verify_password_async(current_password, auth.user.password_hash):
+        return _redirect("/settings", "Current password is incorrect")
+    if len(new_password) < 10:
+        return _redirect("/settings", "Password must be at least 10 characters")
+    auth.user.password_hash = await hash_password_async(new_password)
+    revoked = await destroy_all_sessions(db, auth.user.id)
+    db.add(AuditLog(
+        workspace_id=auth.workspace.id, user_id=auth.user.id,
+        action="password_changed", detail={"sessions_revoked": revoked},
+    ))
+    # The caller's own session was revoked too — send them to log in again.
+    return RedirectResponse("/login?error=Password+changed+—+log+in+again",
+                            status_code=303)

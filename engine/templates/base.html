@@ -3,34 +3,58 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Conversion Engine{% endblock %}</title>
+  <title>{% block title %}Conversion Engine{% endblock %} · 10 Academy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 {% if user is defined and user %}
-<nav>
-  <span class="brand">{{ workspace.name }}</span>
-  {% set path = request.url.path %}
-  <a class="navlink {{ 'active' if path == '/' }}" href="/">Pipeline</a>
-  <a class="navlink {{ 'active' if path.startswith('/campaigns') }}" href="/campaigns">Campaigns</a>
-  <a class="navlink {{ 'active' if path.startswith('/prospects') }}" href="/prospects">Prospects</a>
-  <a class="navlink {{ 'active' if path.startswith('/approvals') }}" href="/approvals">Approvals</a>
-  <a class="navlink {{ 'active' if path.startswith('/analytics') }}" href="/analytics">Analytics</a>
-  <a class="navlink {{ 'active' if path.startswith('/settings') }}" href="/settings">Settings</a>
-  <span class="spacer"></span>
-  {% if not live_mode %}<span class="badge warn" title="All outbound is routed to the sink address">SINK MODE</span>{% endif %}
-  {% if workspace.outbound_paused %}<span class="badge bad">OUTBOUND PAUSED</span>{% endif %}
-  <span class="muted" style="margin:0 10px">{{ user.email }}</span>
-  <form method="post" action="/logout"><button class="secondary">Log out</button></form>
-</nav>
-{% endif %}
-<div class="container">
-  {% if msg is defined and msg %}<div class="banner">{{ msg }}</div>{% endif %}
-  {% if workspace is defined and workspace and workspace.outbound_paused %}
-    <div class="banner bad">Outbound is paused: {{ workspace.pause_reason }} —
-      review in <a href="/settings">Settings</a>.</div>
-  {% endif %}
-  {% block content %}{% endblock %}
+{% set path = request.url.path %}
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand-row">
+      <span class="logo"><span class="mark">10<sup>ac</sup></span></span>
+      <div class="ws-name">{{ workspace.name }}</div>
+      <div class="ws-sub">Conversion Engine</div>
+    </div>
+    <a class="navlink {{ 'active' if path == '/' }}" href="/"><span class="ico">◧</span> Pipeline</a>
+    <a class="navlink {{ 'active' if path.startswith('/campaigns') }}" href="/campaigns"><span class="ico">◈</span> Campaigns</a>
+    <a class="navlink {{ 'active' if path.startswith('/prospects') }}" href="/prospects"><span class="ico">◉</span> Prospects</a>
+    <a class="navlink {{ 'active' if path.startswith('/approvals') }}" href="/approvals"><span class="ico">✓</span> Approvals</a>
+    <a class="navlink {{ 'active' if path.startswith('/analytics') }}" href="/analytics"><span class="ico">▤</span> Analytics</a>
+    <a class="navlink {{ 'active' if path.startswith('/jobs') }}" href="/jobs"><span class="ico">⛭</span> Jobs</a>
+    <a class="navlink {{ 'active' if path.startswith('/settings') }}" href="/settings"><span class="ico">⚙</span> Settings</a>
+    <div class="spacer"></div>
+    <div class="foot">
+      <div class="user-email">{{ user.email }}</div>
+      <form method="post" action="/logout">{{ csrf_field(request) }}<button class="secondary sm" style="width:100%">Log out</button></form>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <span class="page-title">{% block page_title %}{{ self.title() }}{% endblock %}</span>
+      <span class="spacer"></span>
+      {% if not live_mode %}<span class="badge warn dot" title="All outbound is routed to the sink address">Sink mode</span>{% endif %}
+      {% if workspace.outbound_paused %}<span class="badge bad dot">Outbound paused</span>
+      {% else %}<span class="badge good dot">Sending live</span>{% endif %}
+    </div>
+    <div class="content">
+      {% if msg is defined and msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+      {% if workspace is defined and workspace and workspace.outbound_paused %}
+        <div class="banner bad">Outbound is paused: {{ workspace.pause_reason }} —
+          review in <a href="/settings">Settings</a>.</div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </div>
+  </div>
 </div>
+{% else %}
+<div class="auth-shell">
+  {% block auth %}{% endblock %}
+</div>
+{% endif %}
 </body>
 </html>

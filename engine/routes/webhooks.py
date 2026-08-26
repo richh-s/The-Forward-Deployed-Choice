@@ -13,11 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from engine.db import get_db
 from engine.models import Message, Prospect, WebhookEvent, Workspace
 from engine.queue import enqueue
+from engine.ratelimit import check_public_rate
 from engine.services.booking import record_booking_event
 from engine.services.credentials import get_credentials
 from engine.services.smser import send_sms
 from engine.services.suppression import (
-    SendBlocked,
     normalize_phone,
     suppress,
     unsuppress,
@@ -44,16 +44,26 @@ async def _workspace_by_slug(db: AsyncSession, slug: str) -> Workspace:
 
 
 async def _claim_event(db: AsyncSession, provider: str, external_id: str) -> bool:
-    """True if this event is new; False if it was already processed."""
+    """True if this event is new; False if it was already processed.
+    Uses a SAVEPOINT so a duplicate never rolls back work already done in
+    the caller's transaction."""
     if not external_id:
         return True  # nothing to dedup on — process it
-    db.add(WebhookEvent(provider=provider, external_id=external_id))
     try:
-        await db.flush()
+        async with db.begin_nested():
+            db.add(WebhookEvent(provider=provider, external_id=external_id))
+            await db.flush()
         return True
     except IntegrityError:
-        await db.rollback()
         return False
+
+
+def _body_fingerprint(*parts: str) -> str:
+    """Deterministic external id for providers that omit an event id, so
+    replays still dedup instead of degrading open."""
+    import hashlib
+
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()[:64]
 
 
 async def _prospect_by_email(
@@ -176,6 +186,12 @@ async def sms_webhook(
     at_id = str(form.get("id", ""))
     if not phone:
         return {"status": "ignored"}
+    if not at_id:
+        # AT omitted the id — fall back to a content fingerprint so a
+        # replay still dedups instead of enqueuing duplicate replies.
+        at_id = _body_fingerprint(
+            slug, phone, text, str(form.get("date", "")), str(form.get("to", ""))
+        )
     if not await _claim_event(db, "africastalking", at_id):
         return {"status": "duplicate"}
 
@@ -198,7 +214,7 @@ async def sms_webhook(
                 body="You have been unsubscribed. Reply START to resubscribe.",
                 skip_policy_checks=True,
             )
-        except (SendBlocked, Exception) as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — confirmation is best-effort
             logger.warning("Opt-out confirmation failed for %s: %s", phone, exc)
         return {"status": "opted_out"}
 
@@ -386,28 +402,59 @@ async def voice_status(slug: str, request: Request, db: AsyncSession = Depends(g
 # ── Public unsubscribe page ──────────────────────────────────────────
 
 
-@router.get("/u/{token}", response_class=HTMLResponse)
-async def unsubscribe_page(token: str, db: AsyncSession = Depends(get_db)):
+async def _prospect_by_token(db: AsyncSession, token: str) -> Prospect:
     row = await db.execute(
         select(Prospect).where(Prospect.unsubscribe_token == token)
     )
     prospect = row.scalar_one_or_none()
     if prospect is None:
         raise HTTPException(status_code=404, detail="Unknown link")
+    return prospect
+
+
+async def _apply_unsubscribe(db: AsyncSession, prospect: Prospect) -> None:
     await suppress(db, prospect.workspace_id, "email", prospect.email, "opt_out")
     if prospect.phone:
         await suppress(db, prospect.workspace_id, "sms", prospect.phone, "opt_out")
     prospect.stage = "opted_out"
     prospect.next_followup_at = None
+
+
+_UNSUB_STYLE = (
+    "font-family:sans-serif;max-width:480px;margin:80px auto;text-align:center"
+)
+
+
+@router.get("/u/{token}", response_class=HTMLResponse)
+async def unsubscribe_page(
+    token: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """Confirmation page only — the write happens on POST. Mail scanners and
+    link prefetchers GET every URL in an email; a bare GET must never
+    unsubscribe someone who didn't click."""
+    check_public_rate(request, "unsubscribe")
+    await _prospect_by_token(db, token)  # 404 for unknown links
     return HTMLResponse(
-        "<html><body style='font-family:sans-serif;max-width:480px;margin:80px auto;"
-        "text-align:center'><h2>You're unsubscribed</h2>"
-        "<p>You won't receive further messages from us.</p></body></html>"
+        f"<html><body style='{_UNSUB_STYLE}'>"
+        "<h2>Unsubscribe</h2>"
+        "<p>Click below to stop receiving messages from us.</p>"
+        "<form method='post'><button type='submit' "
+        "style='padding:10px 24px;font-size:15px;cursor:pointer'>"
+        "Unsubscribe</button></form></body></html>"
     )
 
 
-# One-click unsubscribe (RFC 8058) posts to the same URL.
+# Handles both the RFC 8058 one-click POST (from the mail provider) and the
+# confirmation form above. Deliberately exempt from CSRF: it is cross-origin
+# by design and strictly less destructive than staying subscribed.
 @router.post("/u/{token}")
-async def unsubscribe_post(token: str, db: AsyncSession = Depends(get_db)):
-    await unsubscribe_page(token, db)
-    return {"unsubscribed": True}
+async def unsubscribe_post(
+    token: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    check_public_rate(request, "unsubscribe")
+    prospect = await _prospect_by_token(db, token)
+    await _apply_unsubscribe(db, prospect)
+    return HTMLResponse(
+        f"<html><body style='{_UNSUB_STYLE}'><h2>You're unsubscribed</h2>"
+        "<p>You won't receive further messages from us.</p></body></html>"
+    )

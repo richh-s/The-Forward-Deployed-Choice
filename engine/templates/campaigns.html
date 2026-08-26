@@ -1,38 +1,52 @@
 {% extends "base.html" %}
 {% block title %}Campaigns{% endblock %}
 {% block content %}
+<div class="page-head">
+  <div>
+    <h1>Campaigns</h1>
+    <div class="sub">{{ campaigns | length }} campaign{{ 's' if campaigns | length != 1 }}</div>
+  </div>
+</div>
+
 <div class="panel">
-  <h2>Campaigns</h2>
   {% if campaigns %}
-  <table>
+  <div class="table-wrap"><table>
     <tr><th>Name</th><th>Status</th><th>Prospects</th><th>Daily cap</th><th>Approval</th></tr>
     {% for c in campaigns %}
     <tr>
-      <td><a href="/campaigns/{{ c.id }}">{{ c.name }}</a></td>
-      <td><span class="badge {{ 'good' if c.status == 'active' else 'muted' }}">{{ c.status }}</span></td>
+      <td><a class="nm" href="/campaigns/{{ c.id }}">{{ c.name }}</a></td>
+      <td><span class="badge {{ 'good dot' if c.status == 'active' else 'muted' }}">{{ c.status }}</span></td>
       <td>{{ counts.get(c.id, 0) }}</td>
-      <td>{{ c.daily_cap }}</td>
-      <td>{{ 'human review' if c.require_approval else 'auto ≥ ' ~ c.auto_approve_score }}</td>
+      <td>{{ c.daily_cap }}/day</td>
+      <td>{{ 'Human review' if c.require_approval else 'Auto ≥ ' ~ c.auto_approve_score }}</td>
     </tr>
     {% endfor %}
-  </table>
-  {% else %}<p class="muted">No campaigns yet — create one below.</p>{% endif %}
+  </table></div>
+  {% else %}
+  <div class="empty">
+    <div class="icon">◈</div>
+    <h3>No campaigns yet</h3>
+    <p>A campaign is a batch of prospects worked on a schedule. Create one
+      below, then import a prospect CSV to start.</p>
+  </div>
+  {% endif %}
 </div>
 
 <div class="panel">
   <h2>New campaign</h2>
-  <form method="post" action="/campaigns">
+  <form method="post" action="/campaigns">{{ csrf_field(request) }}
     <div class="grid cols-3">
-      <div><label>Name</label><input name="name" required></div>
+      <div><label>Name</label><input name="name" required placeholder="Q3 fintech outbound"></div>
       <div><label>Daily send cap</label><input type="number" name="daily_cap" value="50" min="1" max="500"></div>
-      <div><label>&nbsp;</label>
-        <label style="display:flex;align-items:center;gap:8px;margin-top:0">
-          <input type="checkbox" name="require_approval" value="true" checked style="width:auto">
+      <div>
+        <label>Review mode</label>
+        <label class="check">
+          <input type="checkbox" name="require_approval" value="true" checked>
           Require human approval of every draft
         </label>
       </div>
     </div>
-    <div style="margin-top:14px"><button>Create campaign</button></div>
+    <div class="row" style="margin-top:16px"><button>Create campaign</button></div>
   </form>
 </div>
 {% endblock %}

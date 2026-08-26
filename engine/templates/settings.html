@@ -9,7 +9,7 @@
 
 <div class="panel">
   <h2>Workspace &amp; sending identity</h2>
-  <form method="post" action="/settings/workspace">
+  <form method="post" action="/settings/workspace">{{ csrf_field(request) }}
     <div class="grid cols-2">
       <div><label>Workspace name</label><input name="name" value="{{ workspace.name }}" required></div>
       <div><label>From email (verified domain in Resend)</label>
@@ -41,10 +41,10 @@
   <div class="row">
     {% if workspace.outbound_paused %}
     <form method="post" action="/settings/resume-outbound"
-          onsubmit="return confirm('Resume outbound sending for this workspace?')">
+          onsubmit="return confirm('Resume outbound sending for this workspace?')">{{ csrf_field(request) }}
       <button>Resume outbound</button></form>
     {% else %}
-    <form method="post" action="/settings/pause-outbound">
+    <form method="post" action="/settings/pause-outbound">{{ csrf_field(request) }}
       <button class="danger">Pause all outbound</button></form>
     {% endif %}
   </div>
@@ -54,7 +54,7 @@
   <h2>Playbook</h2>
   <p class="muted">The composer and reply agent may only make claims that
     appear here. Everything else is escalated to a human.</p>
-  <form method="post" action="/settings/playbook">
+  <form method="post" action="/settings/playbook">{{ csrf_field(request) }}
     <div class="grid cols-2">
       <div><label>Company name</label>
         <input name="company_name" value="{{ workspace.playbook.get('company_name', '') }}"></div>
@@ -100,7 +100,7 @@
       enable <span class="mono">local:</span> models.
     {% endif %}
   </p>
-  <form method="post" action="/settings/models">
+  <form method="post" action="/settings/models">{{ csrf_field(request) }}
     <div class="grid cols-3">
       <div><label>Compose model</label>
         <input name="compose_model" value="{{ workspace.llm_config.get('compose', '') }}"
@@ -124,7 +124,7 @@
   {% for provider, fields in provider_fields.items() %}
   <details style="margin-bottom:10px">
     <summary>{{ provider }} {{ '✓' if provider in configured }}</summary>
-    <form method="post" action="/settings/credentials/{{ provider }}">
+    <form method="post" action="/settings/credentials/{{ provider }}">{{ csrf_field(request) }}
       <label>Credentials JSON — fields: {{ fields | join(', ') }}</label>
       <textarea name="payload_json" class="mono" placeholder='{"{{ fields[0] }}": "..."}'></textarea>
       <div style="margin-top:8px"><button class="secondary">Save {{ provider }}</button></div>
@@ -148,7 +148,7 @@
 
 <div class="panel">
   <h2>Team</h2>
-  <form method="post" action="/settings/users">
+  <form method="post" action="/settings/users">{{ csrf_field(request) }}
     <div class="grid cols-3">
       <div><label>Email</label><input type="email" name="email" required></div>
       <div><label>Name</label><input name="name"></div>
@@ -159,6 +159,21 @@
     <label>Temporary password (min 10 chars)</label>
     <input type="password" name="password" minlength="10" required>
     <div style="margin-top:10px"><button class="secondary">Add user</button></div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Your account</h2>
+  <form method="post" action="/settings/password">{{ csrf_field(request) }}
+    <div class="grid cols-2">
+      <div><label>Current password</label>
+        <input type="password" name="current_password" required></div>
+      <div><label>New password (min 10 chars)</label>
+        <input type="password" name="new_password" minlength="10" required></div>
+    </div>
+    <p class="muted">Changing your password signs you out of every session,
+      including this one.</p>
+    <div style="margin-top:10px"><button class="secondary">Change password</button></div>
   </form>
 </div>
 {% endblock %}

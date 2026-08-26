@@ -8,15 +8,15 @@
     </h2>
     <div class="row">
       {% if campaign.status != 'active' %}
-      <form class="inline" method="post" action="/campaigns/{{ campaign.id }}/status">
+      <form class="inline" method="post" action="/campaigns/{{ campaign.id }}/status">{{ csrf_field(request) }}
         <input type="hidden" name="status" value="active"><button>Activate</button>
       </form>
       {% else %}
-      <form class="inline" method="post" action="/campaigns/{{ campaign.id }}/status">
+      <form class="inline" method="post" action="/campaigns/{{ campaign.id }}/status">{{ csrf_field(request) }}
         <input type="hidden" name="status" value="paused"><button class="secondary">Pause</button>
       </form>
       {% endif %}
-      <form class="inline" method="post" action="/campaigns/{{ campaign.id }}/status">
+      <form class="inline" method="post" action="/campaigns/{{ campaign.id }}/status">{{ csrf_field(request) }}
         <input type="hidden" name="status" value="completed"><button class="secondary">Complete</button>
       </form>
     </div>
@@ -33,14 +33,14 @@
     <p class="muted">Columns: <span class="mono">email</span> (required),
       <span class="mono">name, company, title, phone, signals</span>
       (signals = JSON object of enrichment signals with confidence levels).</p>
-    <form method="post" action="/campaigns/{{ campaign.id }}/upload" enctype="multipart/form-data">
+    <form method="post" action="/campaigns/{{ campaign.id }}/upload" enctype="multipart/form-data">{{ csrf_field(request) }}
       <input type="file" name="file" accept=".csv" required>
       <div style="margin-top:10px"><button>Import</button></div>
     </form>
   </div>
   <div class="panel">
     <h2>Campaign settings</h2>
-    <form method="post" action="/campaigns/{{ campaign.id }}/settings">
+    <form method="post" action="/campaigns/{{ campaign.id }}/settings">{{ csrf_field(request) }}
       <div class="grid cols-2">
         <div><label>Daily cap</label>
           <input type="number" name="daily_cap" value="{{ campaign.daily_cap }}" min="1" max="500"></div>

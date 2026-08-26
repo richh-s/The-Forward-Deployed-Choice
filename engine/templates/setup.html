@@ -1,21 +1,26 @@
 {% extends "base.html" %}
-{% block title %}First-run setup{% endblock %}
-{% block content %}
-<div class="panel auth-card">
-  <h2>Welcome — create your workspace</h2>
-  <p class="muted">This one-time setup creates the first workspace and its
-    admin account.</p>
+{% block title %}Set up{% endblock %}
+{% block auth %}
+<div class="auth-card">
+  <span class="logo"><span class="mark">10<sup>ac</sup></span> Conversion Engine</span>
+  <h2>Create your workspace</h2>
+  <p class="muted" style="margin:0 0 8px">A one-time setup that creates the first
+    workspace and its admin account.</p>
   {% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
-  <form method="post" action="/setup">
+  <form method="post" action="/setup"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Workspace / company name</label>
-    <input name="workspace_name" required autofocus>
+    <input name="workspace_name" required autofocus placeholder="Acme Consulting">
     <label>Your name</label>
-    <input name="admin_name">
+    <input name="admin_name" placeholder="Jane Doe">
     <label>Admin email</label>
-    <input type="email" name="email" required>
-    <label>Password (min 10 characters)</label>
+    <input type="email" name="email" required placeholder="you@company.com">
+    <label>Password <span class="muted">(min 10 characters)</span></label>
     <input type="password" name="password" minlength="10" required>
-    <div style="margin-top:14px"><button>Create workspace</button></div>
+    {% if needs_setup_token %}
+    <label>Setup token <span class="muted">(SETUP_TOKEN from the deploy)</span></label>
+    <input type="password" name="setup_token" required>
+    {% endif %}
+    <button>Create workspace</button>
   </form>
 </div>
 {% endblock %}

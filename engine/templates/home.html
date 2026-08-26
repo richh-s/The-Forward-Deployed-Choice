@@ -1,63 +1,72 @@
 {% extends "base.html" %}
 {% block title %}Pipeline{% endblock %}
 {% block content %}
-<div class="grid cols-3">
-  <div class="panel stat">
-    <div class="value">{{ pending_drafts }}</div>
-    <div class="label"><a href="/approvals">Drafts awaiting review</a></div>
+<div class="grid cols-4" style="margin-bottom:20px">
+  <div class="stat">
+    <div class="label">Awaiting review</div>
+    <div class="value accent"><a href="/approvals">{{ pending_drafts }}</a></div>
+    <div class="foot">drafts in the approval queue</div>
   </div>
-  <div class="panel stat">
-    <div class="value">{{ stage_counts.get('booked', 0) }}</div>
+  <div class="stat">
+    <div class="label">Warm / qualified</div>
+    <div class="value">{{ stage_counts.get('warm', 0) + stage_counts.get('booked', 0) }}</div>
+    <div class="foot">prospects engaged</div>
+  </div>
+  <div class="stat">
     <div class="label">Meetings booked</div>
+    <div class="value">{{ stage_counts.get('booked', 0) }}</div>
+    <div class="foot">confirmed on the calendar</div>
   </div>
-  <div class="panel stat">
+  <div class="stat">
+    <div class="label">LLM spend · {{ metrics.window_days }}d</div>
     <div class="value">${{ '%.2f' | format(metrics.llm_cost_usd) }}</div>
-    <div class="label">LLM spend, last {{ metrics.window_days }} days</div>
+    <div class="foot">${{ '%.2f' | format(metrics.cost_per_qualified_lead) }} / qualified lead</div>
   </div>
 </div>
 
 <div class="panel">
-  <h2>Pipeline</h2>
-  <table>
-    <tr>{% for s in stages %}<th>{{ s.replace('_', ' ') }}</th>{% endfor %}</tr>
-    <tr>
-      {% for s in stages %}
-      <td><a href="/prospects?stage={{ s }}">{{ stage_counts.get(s, 0) }}</a></td>
-      {% endfor %}
-    </tr>
-  </table>
+  <div class="panel-head"><h2>Pipeline</h2>
+    <a class="btn secondary sm" href="/prospects">All prospects</a></div>
+  <div class="pipeline">
+    {% for s in stages %}
+    <a class="stage" href="/prospects?stage={{ s }}">
+      <div class="n">{{ stage_counts.get(s, 0) }}</div>
+      <div class="s">{{ s.replace('_', ' ') }}</div>
+    </a>
+    {% endfor %}
+  </div>
 </div>
 
 <div class="grid cols-2">
   <div class="panel">
     <h2>Upcoming meetings</h2>
     {% if upcoming %}
-    <table>
+    <div class="table-wrap"><table>
       <tr><th>When</th><th>Status</th><th>Booking</th></tr>
       {% for b in upcoming %}
       <tr>
-        <td>{{ b.start_time.strftime('%Y-%m-%d %H:%M UTC') if b.start_time else '—' }}</td>
-        <td><span class="badge good">{{ b.status }}</span></td>
-        <td class="mono">{{ b.provider_uid[:18] }}</td>
+        <td>{{ b.start_time.strftime('%b %d, %H:%M UTC') if b.start_time else '—' }}</td>
+        <td><span class="badge good dot">{{ b.status }}</span></td>
+        <td class="mono">{{ b.provider_uid[:16] }}</td>
       </tr>
       {% endfor %}
-    </table>
+    </table></div>
     {% else %}<p class="muted">No confirmed bookings yet.</p>{% endif %}
   </div>
   <div class="panel">
-    <h2>Recent escalations</h2>
+    <h2>Needs a human <span class="badge red">{{ escalations | length }}</span></h2>
     {% if escalations %}
-    <table>
+    <div class="table-wrap"><table>
       <tr><th>When</th><th>Reason</th></tr>
       {% for e in escalations %}
       <tr>
-        <td>{{ e.created_at.strftime('%m-%d %H:%M') }}</td>
+        <td class="muted">{{ e.created_at.strftime('%b %d, %H:%M') }}</td>
         <td>{{ e.detail.get('reason', '')[:120] }}
           {% if e.detail.get('prospect_id') %}
-          — <a href="/prospects/{{ e.detail['prospect_id'] }}">prospect</a>{% endif %}</td>
+          — <a href="/prospects/{{ e.detail['prospect_id'] }}">view prospect</a>{% endif %}</td>
       </tr>
       {% endfor %}
-    </table>
+    </table></div>
     {% else %}<p class="muted">Nothing escalated by the reply agent.</p>{% endif %}
   </div>
 </div>
