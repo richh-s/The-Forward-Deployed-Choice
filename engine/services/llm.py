@@ -27,7 +27,7 @@ from tenacity import (
     retry,
     retry_if_exception,
     stop_after_attempt,
-    wait_exponential,
+    wait_random_exponential,
 )
 
 from engine.config import get_settings
@@ -36,6 +36,32 @@ from engine.services.credentials import get_credentials
 logger = logging.getLogger(__name__)
 
 LOCAL_PREFIX = "local:"
+
+_local_client: httpx.AsyncClient | None = None
+_warned_plaintext_key = False
+
+
+def _get_local_client() -> httpx.AsyncClient:
+    """Long-timeout pooled client for the local backend (reasoning models
+    are slow; don't pay a TLS/TCP handshake per call on top)."""
+    global _local_client, _warned_plaintext_key
+    settings = get_settings()
+    if (
+        not _warned_plaintext_key
+        and settings.local_llm_api_key
+        and settings.local_llm_base_url.startswith("http://")
+    ):
+        logger.warning(
+            "LOCAL_LLM_API_KEY is sent as a bearer token over plaintext "
+            "http:// — acceptable only on a private network/tailnet"
+        )
+        _warned_plaintext_key = True
+    if _local_client is None or _local_client.is_closed:
+        _local_client = httpx.AsyncClient(
+            timeout=settings.local_llm_timeout_seconds,
+            follow_redirects=False,
+        )
+    return _local_client
 
 # USD per 1M tokens (input, output). Claude API first-party rates.
 PRICING: dict[str, tuple[float, float]] = {
@@ -163,19 +189,16 @@ def _is_retryable_http(exc: BaseException) -> bool:
 @retry(
     retry=retry_if_exception(_is_retryable_http),
     stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, max=15),
+    wait=wait_random_exponential(multiplier=1, max=15),
     reraise=True,
 )
 async def _local_chat(base_url: str, api_key: str, payload: dict) -> httpx.Response:
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    async with httpx.AsyncClient(
-        timeout=get_settings().local_llm_timeout_seconds
-    ) as client:
-        return await client.post(
-            f"{base_url.rstrip('/')}/chat/completions", headers=headers, json=payload
-        )
+    return await _get_local_client().post(
+        f"{base_url.rstrip('/')}/chat/completions", headers=headers, json=payload
+    )
 
 
 # Reasoning models (e.g. gemma via Ollama) sometimes leak their internal

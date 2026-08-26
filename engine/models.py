@@ -5,7 +5,7 @@ in routes/services filters on it. Types are kept portable (String/Text/JSON)
 so the same models run on Postgres in production and SQLite in tests.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     JSON,
@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from engine.db import Base
@@ -29,13 +30,13 @@ def new_id() -> str:
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def as_aware(dt: datetime | None) -> datetime | None:
     """Coerce a DB-loaded datetime to aware-UTC (SQLite drops tzinfo)."""
     if dt is not None and dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -163,6 +164,9 @@ class Prospect(Base, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("workspace_id", "email", name="uq_prospect_ws_email"),
         Index("ix_prospects_ws_stage", "workspace_id", "stage"),
+        # Scheduler scans per campaign for new prospects and due follow-ups.
+        Index("ix_prospects_campaign_stage", "campaign_id", "stage"),
+        Index("ix_prospects_followup", "campaign_id", "next_followup_at"),
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
@@ -233,6 +237,8 @@ class Message(Base, TimestampMixin):
     __tablename__ = "messages"
     __table_args__ = (
         Index("ix_messages_ws_prospect", "workspace_id", "prospect_id"),
+        # Kill-switch/analytics scan the rolling window every minute.
+        Index("ix_messages_ws_created", "workspace_id", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
@@ -281,6 +287,8 @@ class Suppression(Base):
         UniqueConstraint(
             "workspace_id", "channel", "address", name="uq_suppression"
         ),
+        # Kill-switch counts opt-outs over a rolling window every minute.
+        Index("ix_suppressions_ws_created", "workspace_id", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
@@ -320,7 +328,8 @@ class Job(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     workspace_id: Mapped[str | None] = mapped_column(String(32), index=True)
     type: Mapped[str] = mapped_column(String(60), nullable=False)
-    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    # MutableDict: in-place payload mutations are dirty-tracked and persisted.
+    payload: Mapped[dict] = mapped_column(MutableDict.as_mutable(JSON), default=dict)
     status: Mapped[str] = mapped_column(String(20), default="pending")
     # pending | running | done | failed (will retry) | dead
     run_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -331,7 +340,11 @@ class Job(Base, TimestampMixin):
 
 
 class DailyCounter(Base):
-    """Per-workspace daily send counters enforcing volume caps."""
+    """Per-workspace daily counters enforcing volume caps.
+
+    `channel` is either a send channel ("email"/"sms") or a campaign queue
+    bucket ("q:<campaign id>") used to make campaign daily_cap actually
+    daily."""
 
     __tablename__ = "daily_counters"
     __table_args__ = (
@@ -341,7 +354,7 @@ class DailyCounter(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     workspace_id: Mapped[str] = mapped_column(String(32), nullable=False)
     date: Mapped[str] = mapped_column(String(10), nullable=False)  # YYYY-MM-DD
-    channel: Mapped[str] = mapped_column(String(10), nullable=False)
+    channel: Mapped[str] = mapped_column(String(40), nullable=False)
     count: Mapped[int] = mapped_column(Integer, default=0)
 
 

@@ -5,14 +5,13 @@ order: workspace pause (kill-switch), suppression list, per-prospect touch
 ceiling, and the workspace's daily channel cap.
 """
 import logging
-from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from engine.config import get_settings
-from engine.models import DailyCounter, Prospect, Suppression, Workspace
+from engine.models import DailyCounter, Prospect, Suppression, Workspace, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -60,19 +59,22 @@ async def suppress(
     )
     if not address:
         return
-    db.add(
-        Suppression(
-            workspace_id=workspace_id, channel=channel, address=address, reason=reason
-        )
-    )
     try:
-        await db.flush()
+        # SAVEPOINT: a duplicate must not roll back the caller's transaction.
+        async with db.begin_nested():
+            db.add(
+                Suppression(
+                    workspace_id=workspace_id, channel=channel,
+                    address=address, reason=reason,
+                )
+            )
+            await db.flush()
         logger.info(
             "Suppressed %s/%s in workspace %s (%s)",
             channel, address, workspace_id, reason,
         )
     except IntegrityError:
-        await db.rollback()  # already suppressed — idempotent
+        pass  # already suppressed — idempotent
 
 
 async def unsuppress(
@@ -93,38 +95,35 @@ async def unsuppress(
         await db.delete(entry)
 
 
-async def _increment_daily_counter(
-    db: AsyncSession, workspace_id: str, channel: str, cap: int
+async def increment_daily_counter(
+    db: AsyncSession, workspace_id: str, channel: str, cap: int, amount: int = 1
 ) -> None:
-    today = date.today().isoformat()
-    row = await db.execute(
-        select(DailyCounter).where(
+    """Atomically increment the day's counter, enforcing the cap in SQL.
+
+    The conditional UPDATE (`count + amount <= cap`) is evaluated under the
+    row lock, so two concurrent workers cannot both pass a read-then-write
+    check and overshoot the ceiling."""
+    today = utcnow().date().isoformat()
+    try:
+        async with db.begin_nested():
+            db.add(DailyCounter(
+                workspace_id=workspace_id, date=today, channel=channel, count=0
+            ))
+            await db.flush()
+    except IntegrityError:
+        pass  # row already exists for today
+    result = await db.execute(
+        update(DailyCounter)
+        .where(
             DailyCounter.workspace_id == workspace_id,
             DailyCounter.date == today,
             DailyCounter.channel == channel,
+            DailyCounter.count + amount <= cap,
         )
+        .values(count=DailyCounter.count + amount)
     )
-    counter = row.scalar_one_or_none()
-    if counter is None:
-        counter = DailyCounter(
-            workspace_id=workspace_id, date=today, channel=channel, count=0
-        )
-        db.add(counter)
-        try:
-            await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            row = await db.execute(
-                select(DailyCounter).where(
-                    DailyCounter.workspace_id == workspace_id,
-                    DailyCounter.date == today,
-                    DailyCounter.channel == channel,
-                )
-            )
-            counter = row.scalar_one()
-    if counter.count >= cap:
+    if not result.rowcount:
         raise SendBlocked(f"Daily {channel} cap reached ({cap}) for this workspace")
-    counter.count += 1
 
 
 async def check_can_send(
@@ -155,4 +154,4 @@ async def check_can_send(
         if channel == "email"
         else settings.max_sms_per_day_per_workspace
     )
-    await _increment_daily_counter(db, workspace.id, channel, cap)
+    await increment_daily_counter(db, workspace.id, channel, cap)

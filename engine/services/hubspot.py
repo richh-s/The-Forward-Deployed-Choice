@@ -10,11 +10,12 @@ from tenacity import (
     retry,
     retry_if_exception,
     stop_after_attempt,
-    wait_exponential,
+    wait_random_exponential,
 )
 
 from engine.models import Prospect, Workspace
 from engine.services.credentials import get_credentials
+from engine.services.http import get_client
 
 logger = logging.getLogger(__name__)
 
@@ -30,20 +31,19 @@ def _is_retryable(exc: BaseException) -> bool:
 @retry(
     retry=retry_if_exception(_is_retryable),
     stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, max=20),
+    wait=wait_random_exponential(multiplier=1, max=20),
     reraise=True,
 )
 async def _request(token: str, method: str, path: str, json_body: dict) -> httpx.Response:
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.request(
-            method,
-            f"{HUBSPOT_API}{path}",
-            headers={"Authorization": f"Bearer {token}"},
-            json=json_body,
-        )
-        if resp.status_code not in (200, 201, 409):
-            resp.raise_for_status()
-        return resp
+    resp = await get_client().request(
+        method,
+        f"{HUBSPOT_API}{path}",
+        headers={"Authorization": f"Bearer {token}"},
+        json=json_body,
+    )
+    if resp.status_code not in (200, 201, 409):
+        resp.raise_for_status()
+    return resp
 
 
 def _contact_properties(prospect: Prospect) -> dict:

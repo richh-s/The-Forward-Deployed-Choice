@@ -51,6 +51,14 @@ async def record_booking_event(
     prospect_id = metadata.get("prospect_id")
     if prospect_id:
         prospect = await db.get(Prospect, prospect_id)
+        # metadata is attacker-controllable webhook input — never let it
+        # reference a prospect outside this workspace.
+        if prospect is not None and prospect.workspace_id != workspace.id:
+            logger.warning(
+                "Cal.com metadata prospect_id %s not in workspace %s; ignoring",
+                prospect_id, workspace.id,
+            )
+            prospect = None
     if prospect is None:
         # Fall back to attendee email lookup within the workspace.
         for attendee in payload.get("attendees") or []:

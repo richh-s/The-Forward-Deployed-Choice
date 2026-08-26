@@ -13,13 +13,14 @@ from tenacity import (
     retry,
     retry_if_exception,
     stop_after_attempt,
-    wait_exponential,
+    wait_random_exponential,
 )
 
 from engine.config import get_settings
 from engine.models import Message, Prospect, Workspace
 from engine.services.credentials import get_credentials
-from engine.services.suppression import SendBlocked, check_can_send
+from engine.services.http import get_client
+from engine.services.suppression import SendBlocked, check_can_send, is_suppressed
 
 logger = logging.getLogger(__name__)
 
@@ -51,18 +52,20 @@ def render_html(body_text: str, unsubscribe_url: str) -> str:
 @retry(
     retry=retry_if_exception(_is_retryable),
     stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, max=20),
+    wait=wait_random_exponential(multiplier=1, max=20),
     reraise=True,
 )
-async def _resend_send(api_key: str, payload: dict) -> dict:
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(
-            RESEND_API,
-            headers={"Authorization": f"Bearer {api_key}"},
-            json=payload,
-        )
-        resp.raise_for_status()
-        return resp.json()
+async def _resend_send(
+    api_key: str, payload: dict, idempotency_key: str | None = None
+) -> dict:
+    headers = {"Authorization": f"Bearer {api_key}"}
+    if idempotency_key:
+        # Resend dedupes on this key, so a job retry after a DB failure
+        # cannot deliver the same email twice.
+        headers["Idempotency-Key"] = idempotency_key
+    resp = await get_client().post(RESEND_API, headers=headers, json=payload)
+    resp.raise_for_status()
+    return resp.json()
 
 
 async def send_email(
@@ -73,6 +76,7 @@ async def send_email(
     subject: str,
     body: str,
     compose_cost_usd: float = 0.0,
+    idempotency_key: str | None = None,
 ) -> Message:
     """Policy-checked, suppressed-aware, sink-gated email send.
     Raises SendBlocked (policy) or httpx errors (transport, after retries)."""
@@ -110,7 +114,14 @@ async def send_email(
             **headers,
         },
     }
-    result = await _resend_send(creds["api_key"], payload)
+    # Last-instant re-check: an unsubscribe committed between the policy
+    # check above and this point must still win.
+    if await is_suppressed(db, workspace.id, "email", prospect.email):
+        raise SendBlocked("Recipient is on the email suppression list")
+
+    result = await _resend_send(
+        creds["api_key"], payload, idempotency_key=idempotency_key
+    )
     provider_id = result.get("id")
     if not provider_id:
         raise RuntimeError(f"Resend returned no message id: {result}")

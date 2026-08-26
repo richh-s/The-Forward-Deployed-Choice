@@ -85,6 +85,11 @@ def _thresholds(workspace: Workspace) -> dict:
                 settings.killswitch_cost_per_qualified_lead_usd,
             )
         ),
+        "max_llm_cost_usd": float(
+            overrides.get(
+                "max_llm_cost_usd", settings.killswitch_max_llm_cost_usd
+            )
+        ),
     }
 
 
@@ -117,6 +122,16 @@ async def evaluate_killswitch(db: AsyncSession, workspace: Workspace) -> list[st
         breaches.append(
             f"cost_per_qualified_lead ${metrics['cost_per_qualified_lead']:.2f} > "
             f"${thresholds['cost_per_qualified_lead']:.2f}"
+        )
+    # Absolute spend ceiling: catches the runaway that converts nobody —
+    # the per-lead check above can never fire at zero qualified leads.
+    if (
+        thresholds["max_llm_cost_usd"] > 0
+        and metrics["llm_cost_usd"] > thresholds["max_llm_cost_usd"]
+    ):
+        breaches.append(
+            f"llm_cost_usd ${metrics['llm_cost_usd']:.2f} > "
+            f"${thresholds['max_llm_cost_usd']:.2f} over the window"
         )
 
     if breaches and not workspace.outbound_paused:

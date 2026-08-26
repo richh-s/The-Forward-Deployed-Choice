@@ -11,13 +11,19 @@ from tenacity import (
     retry,
     retry_if_exception,
     stop_after_attempt,
-    wait_exponential,
+    wait_random_exponential,
 )
 
 from engine.config import get_settings
 from engine.models import Message, Prospect, Workspace
 from engine.services.credentials import get_credentials
-from engine.services.suppression import SendBlocked, check_can_send, normalize_phone
+from engine.services.http import get_client
+from engine.services.suppression import (
+    SendBlocked,
+    check_can_send,
+    is_suppressed,
+    normalize_phone,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +40,7 @@ def _is_retryable(exc: BaseException) -> bool:
 @retry(
     retry=retry_if_exception(_is_retryable),
     stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, max=20),
+    wait=wait_random_exponential(multiplier=1, max=20),
     reraise=True,
 )
 async def _at_send(
@@ -44,14 +50,13 @@ async def _at_send(
     data = {"username": username, "to": to, "message": body}
     if sender_id:
         data["from"] = sender_id
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(
-            url,
-            headers={"apiKey": api_key, "Accept": "application/json"},
-            data=data,
-        )
-        resp.raise_for_status()
-        return resp.json()
+    resp = await get_client().post(
+        url,
+        headers={"apiKey": api_key, "Accept": "application/json"},
+        data=data,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 
 async def send_sms(
@@ -76,6 +81,7 @@ async def send_sms(
         )
 
     to_phone = normalize_phone(to_phone)
+    intended_recipient = to_phone
     if not skip_policy_checks:
         await check_can_send(db, workspace, "sms", to_phone, prospect)
 
@@ -86,6 +92,12 @@ async def send_sms(
             )
         body = f"[SINK — intended for {to_phone}] {body}"
         to_phone = normalize_phone(settings.sink_phone)
+
+    # Last-instant re-check (STOP handled while this send was in flight).
+    if not skip_policy_checks and await is_suppressed(
+        db, workspace.id, "sms", intended_recipient
+    ):
+        raise SendBlocked("Recipient is on the sms suppression list")
 
     result = await _at_send(
         creds.get("username", "sandbox"),

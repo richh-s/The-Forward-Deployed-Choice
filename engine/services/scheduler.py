@@ -1,23 +1,36 @@
-"""Periodic scheduler: campaign send ticks, follow-ups, kill-switch checks.
+"""Periodic scheduler: campaign send ticks, follow-ups, kill-switch checks,
+and housekeeping (stuck-job recovery, retention purges).
 
-Runs inside the worker process on a fixed interval. All actions are enqueued
-as idempotent jobs, so overlapping ticks (or two schedulers during a deploy)
-cannot double-send.
+Safety under scale-out: on Postgres a pass first takes an advisory lock, so
+two replicas never run concurrent passes; enqueues are additionally
+idempotency-keyed. Each workspace is processed in its own transaction so one
+tenant's failure can't roll back another's pass.
 """
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, text
 
+from engine.auth import purge_expired_sessions
 from engine.config import get_settings
 from engine.db import db_session
-from engine.models import Campaign, Prospect, Workspace, utcnow
-from engine.queue import enqueue
+from engine.models import (
+    Campaign,
+    DailyCounter,
+    Prospect,
+    WebhookEvent,
+    Workspace,
+    utcnow,
+)
+from engine.queue import beat, enqueue, purge_old_jobs, recover_stuck_jobs
 from engine.services.killswitch import evaluate_killswitch
+from engine.services.suppression import SendBlocked, increment_daily_counter
 
 logger = logging.getLogger(__name__)
+
+_last_purge_date: str | None = None
 
 
 def _in_send_window(campaign: Campaign) -> bool:
@@ -28,11 +41,31 @@ def _in_send_window(campaign: Campaign) -> bool:
     return campaign.send_window_start_hour <= now.hour < campaign.send_window_end_hour
 
 
+def _queue_bucket(campaign: Campaign) -> str:
+    return f"q:{campaign.id}"
+
+
+async def _queued_today(db, campaign: Campaign) -> int:
+    today = utcnow().date().isoformat()
+    row = await db.execute(
+        select(DailyCounter.count).where(
+            DailyCounter.workspace_id == campaign.workspace_id,
+            DailyCounter.date == today,
+            DailyCounter.channel == _queue_bucket(campaign),
+        )
+    )
+    return int(row.scalar_one_or_none() or 0)
+
+
 async def _tick_campaign(db, campaign: Campaign) -> None:
-    """Move up to daily_cap enriched/new prospects into composition today."""
+    """Move new/enriched prospects into composition, at most daily_cap per
+    calendar day (tracked in DailyCounter — a 60s tick must not treat the
+    cap as per-tick)."""
     if not _in_send_window(campaign):
         return
-    today = utcnow().date().isoformat()
+    remaining = campaign.daily_cap - await _queued_today(db, campaign)
+    if remaining <= 0:
+        return
     rows = await db.execute(
         select(Prospect)
         .where(
@@ -40,9 +73,16 @@ async def _tick_campaign(db, campaign: Campaign) -> None:
             Prospect.stage.in_(["new", "enriched"]),
         )
         .order_by(Prospect.created_at)
-        .limit(campaign.daily_cap)
+        .limit(remaining)
     )
     for prospect in rows.scalars().all():
+        try:
+            await increment_daily_counter(
+                db, campaign.workspace_id, _queue_bucket(campaign),
+                cap=campaign.daily_cap,
+            )
+        except SendBlocked:
+            return  # today's budget spent
         await enqueue(
             db,
             "compose_draft",
@@ -57,7 +97,6 @@ async def _tick_campaign(db, campaign: Campaign) -> None:
             idempotency_key=f"compose:{prospect.id}:t1",
         )
         prospect.stage = "queued"
-    _ = today  # (kept for symmetry with follow-up keys below)
 
 
 async def _tick_followups(db, campaign: Campaign) -> None:
@@ -91,24 +130,89 @@ async def _tick_followups(db, campaign: Campaign) -> None:
         prospect.next_followup_at = None  # re-set when the follow-up is sent
 
 
-async def run_scheduler_pass() -> None:
+async def _process_workspace(workspace_id: str) -> None:
     async with db_session() as db:
-        workspaces = (await db.execute(select(Workspace))).scalars().all()
-        for workspace in workspaces:
-            await evaluate_killswitch(db, workspace)
-            if workspace.outbound_paused:
-                continue
-            campaigns = (
-                await db.execute(
-                    select(Campaign).where(
-                        Campaign.workspace_id == workspace.id,
-                        Campaign.status == "active",
-                    )
+        workspace = await db.get(Workspace, workspace_id)
+        if workspace is None:
+            return
+        await evaluate_killswitch(db, workspace)
+        if workspace.outbound_paused:
+            return
+        campaigns = (
+            await db.execute(
+                select(Campaign).where(
+                    Campaign.workspace_id == workspace.id,
+                    Campaign.status == "active",
                 )
-            ).scalars().all()
-            for campaign in campaigns:
-                await _tick_campaign(db, campaign)
-                await _tick_followups(db, campaign)
+            )
+        ).scalars().all()
+        for campaign in campaigns:
+            await _tick_campaign(db, campaign)
+            await _tick_followups(db, campaign)
+
+
+async def run_scheduler_pass() -> None:
+    async with db_session() as lock_db:
+        if lock_db.get_bind().dialect.name == "postgresql":
+            got = (await lock_db.execute(
+                text("SELECT pg_try_advisory_xact_lock(hashtext('engine-scheduler'))")
+            )).scalar()
+            if not got:
+                logger.debug("Another scheduler instance holds the lock; skipping")
+                return
+        workspace_ids = [
+            wid for (wid,) in
+            (await lock_db.execute(select(Workspace.id))).all()
+        ]
+        # One transaction per workspace: a failing tenant is isolated and
+        # logged, and every other tenant's tick still commits.
+        for workspace_id in workspace_ids:
+            try:
+                await _process_workspace(workspace_id)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "Scheduler pass failed for workspace %s", workspace_id
+                )
+        await _housekeeping()
+        # advisory lock releases when lock_db's transaction ends here
+
+
+async def _housekeeping() -> None:
+    global _last_purge_date
+    try:
+        await recover_stuck_jobs()
+    except Exception:  # noqa: BLE001
+        logger.exception("Stuck-job recovery failed")
+
+    today = utcnow().date().isoformat()
+    if _last_purge_date == today:
+        return
+    _last_purge_date = today
+    settings = get_settings()
+    try:
+        removed = await purge_old_jobs()
+        async with db_session() as db:
+            purged_sessions = await purge_expired_sessions(db)
+            if settings.retention_webhook_events_days > 0:
+                cutoff = utcnow() - timedelta(
+                    days=settings.retention_webhook_events_days
+                )
+                await db.execute(
+                    delete(WebhookEvent).where(WebhookEvent.received_at < cutoff)
+                )
+            if settings.retention_daily_counters_days > 0:
+                cutoff_date = (
+                    utcnow() - timedelta(days=settings.retention_daily_counters_days)
+                ).date().isoformat()
+                await db.execute(
+                    delete(DailyCounter).where(DailyCounter.date < cutoff_date)
+                )
+        logger.info(
+            "Retention purge: %d old jobs, %d expired sessions",
+            removed, purged_sessions,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Retention purge failed")
 
 
 async def scheduler_loop(stop_event: asyncio.Event) -> None:
@@ -117,13 +221,16 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
         "Scheduler started (every %.0fs)", settings.scheduler_interval_seconds
     )
     while not stop_event.is_set():
+        beat("scheduler")
         try:
             await run_scheduler_pass()
+        except asyncio.CancelledError:
+            raise
         except Exception:  # pragma: no cover
             logger.exception("Scheduler pass failed")
         try:
             await asyncio.wait_for(
                 stop_event.wait(), timeout=settings.scheduler_interval_seconds
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass

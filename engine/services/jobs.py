@@ -43,14 +43,31 @@ async def _load(db: AsyncSession, model, obj_id: str, label: str):
     return obj
 
 
+async def _load_scoped(db: AsyncSession, payload: dict):
+    """Load (workspace, prospect) from a job payload and verify they belong
+    together — defense in depth against a forged/mismatched payload."""
+    workspace = await _load(db, Workspace, payload["workspace_id"], "workspace")
+    prospect = await _load(db, Prospect, payload["prospect_id"], "prospect")
+    if prospect.workspace_id != workspace.id:
+        raise RuntimeError(
+            f"Prospect {prospect.id} does not belong to workspace {workspace.id}"
+        )
+    return workspace, prospect
+
+
 @job_handler("compose_draft")
 async def handle_compose_draft(db: AsyncSession, job: Job) -> None:
     p = job.payload
-    workspace = await _load(db, Workspace, p["workspace_id"], "workspace")
-    prospect = await _load(db, Prospect, p["prospect_id"], "prospect")
+    workspace, prospect = await _load_scoped(db, p)
     campaign = await db.get(Campaign, p["campaign_id"]) if p.get("campaign_id") else None
+    if campaign is not None and campaign.workspace_id != workspace.id:
+        raise RuntimeError("Campaign/workspace mismatch in job payload")
     touch_number = int(p.get("touch_number", 1))
     angle = p.get("angle", "")
+
+    # Release the transaction before the (potentially minutes-long) LLM
+    # calls — don't hold a DB connection idle-in-transaction.
+    await db.commit()
 
     draft_fields, cost = await compose_svc.compose_outreach(
         db, workspace, prospect, campaign, touch_number=touch_number, angle=angle
@@ -133,6 +150,9 @@ async def handle_send_draft(db: AsyncSession, job: Job) -> None:
     workspace = await _load(db, Workspace, draft.workspace_id, "workspace")
     prospect = await _load(db, Prospect, draft.prospect_id, "prospect")
 
+    if prospect.workspace_id != workspace.id:
+        raise RuntimeError("Draft prospect/workspace mismatch")
+
     try:
         message = await send_email(
             db,
@@ -141,6 +161,9 @@ async def handle_send_draft(db: AsyncSession, job: Job) -> None:
             subject=draft.subject,
             body=draft.body,
             compose_cost_usd=draft.compose_cost_usd,
+            # Resend-side dedup: a retry after a post-send DB failure
+            # must not deliver this draft a second time.
+            idempotency_key=f"draft-{draft.id}",
         )
     except SendBlocked as exc:
         draft.status = "failed"
@@ -169,17 +192,21 @@ async def handle_send_draft(db: AsyncSession, job: Job) -> None:
         "sync_hubspot_contact",
         {"workspace_id": workspace.id, "prospect_id": prospect.id},
         workspace_id=workspace.id,
-        idempotency_key=f"hs_contact:{prospect.id}",
+        # Per-draft, not per-prospect: later touches must be able to enqueue
+        # their own sync (sync_contact itself is idempotent on HubSpot).
+        idempotency_key=f"hs_contact:{draft.id}",
     )
 
 
 @job_handler("inbound_message")
 async def handle_inbound_message(db: AsyncSession, job: Job) -> None:
     p = job.payload
-    workspace = await _load(db, Workspace, p["workspace_id"], "workspace")
-    prospect = await _load(db, Prospect, p["prospect_id"], "prospect")
+    workspace, prospect = await _load_scoped(db, p)
     channel = p["channel"]
     text = p["text"]
+
+    # Release the transaction across the LLM call (see handle_compose_draft).
+    await db.commit()
 
     result = await reply_agent.handle_inbound(
         db, workspace, prospect, channel=channel, inbound_text=text
@@ -235,6 +262,7 @@ async def handle_inbound_message(db: AsyncSession, job: Job) -> None:
                 subject="Re: your reply",
                 body=reply_text,
                 compose_cost_usd=result.get("cost_usd", 0.0),
+                idempotency_key=f"reply-{p.get('message_id') or job.id}",
             )
     except SendBlocked as exc:
         logger.warning(
@@ -244,17 +272,14 @@ async def handle_inbound_message(db: AsyncSession, job: Job) -> None:
 
 @job_handler("sync_hubspot_contact")
 async def handle_sync_hubspot(db: AsyncSession, job: Job) -> None:
-    p = job.payload
-    workspace = await _load(db, Workspace, p["workspace_id"], "workspace")
-    prospect = await _load(db, Prospect, p["prospect_id"], "prospect")
+    workspace, prospect = await _load_scoped(db, job.payload)
     await hubspot_svc.sync_contact(db, workspace, prospect)
 
 
 @job_handler("hubspot_mark_booked")
 async def handle_hubspot_booked(db: AsyncSession, job: Job) -> None:
     p = job.payload
-    workspace = await _load(db, Workspace, p["workspace_id"], "workspace")
-    prospect = await _load(db, Prospect, p["prospect_id"], "prospect")
+    workspace, prospect = await _load_scoped(db, p)
     await hubspot_svc.mark_meeting_booked(
         db,
         workspace,
