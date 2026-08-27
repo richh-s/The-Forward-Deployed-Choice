@@ -3,8 +3,10 @@ convert it to the schema enrichment/pipeline.py reads.
 
 The challenge specifies the 1,001-record Apache-2.0 sample from
 github.com/luminati-io/Crunchbase-dataset-samples. This script downloads the
-CSV, converts each record to the pipeline's schema, and merges in any curated
-demo records already present (NovaPay etc. power the seeded demo prospect).
+CSV and converts each record to the pipeline's schema — the dataset contains
+ONLY the handed public records; nothing curated or hand-written is merged in.
+(Demo prospects are picked from these real records at seed time, with an
+explicitly synthetic contact, per the challenge's data rule.)
 
     python scripts/fetch_crunchbase_odm.py            # refresh data/crunchbase_odm_sample.json
 """
@@ -20,11 +22,6 @@ CSV_URL = (
     "Crunchbase-dataset-samples/main/crunchbase-companies-information.csv"
 )
 OUT_PATH = Path(__file__).resolve().parent.parent / "data" / "crunchbase_odm_sample.json"
-
-# Demo records are fictional companies (uuid ends in a curated marker) that the
-# seeded demo prospect depends on — always preserved at the front of the file.
-CURATED_UUID_HINTS = ("-uuid-",)
-
 
 def _parse_json(value: str, default):
     try:
@@ -57,7 +54,30 @@ def convert_row(row: dict) -> dict:
         "category_list": category_list,
         "city": "",
         "region": row.get("region", "") or row.get("country_code", ""),
-        "people": [],
+        # Real people data from the handed CSV: named executives with titles
+        # (current_employees) and founders.
+        "people": (
+            [
+                {"name": p.get("name", ""), "title": p.get("title", "")}
+                for p in _parse_json(row.get("current_employees", ""), [])
+                if isinstance(p, dict) and p.get("name")
+            ]
+            + [
+                {"name": f.get("value", ""), "title": "Founder"}
+                for f in _parse_json(row.get("founders", ""), [])
+                if isinstance(f, dict) and f.get("value")
+            ]
+        ),
+        # Dated leadership-change events with citable news links.
+        "leadership_events": [
+            {
+                "date": str(e.get("key_event_date", ""))[:10],
+                "label": e.get("label", ""),
+                "source_url": e.get("link", ""),
+            }
+            for e in _parse_json(row.get("leadership_hire", ""), [])
+            if isinstance(e, dict) and e.get("key_event_date")
+        ],
         # Extra fields consumed by the market-space map (harmless to the
         # signal pipeline, which ignores unknown keys):
         "about": (row.get("about") or "")[:300],
@@ -68,26 +88,17 @@ def convert_row(row: dict) -> dict:
 
 
 def main() -> int:
-    curated = []
-    if OUT_PATH.exists():
-        for record in json.loads(OUT_PATH.read_text()):
-            uuid = record.get("uuid", "")
-            if any(h in uuid for h in CURATED_UUID_HINTS):
-                curated.append(record)
-
     print(f"Downloading {CSV_URL} ...")
     with urllib.request.urlopen(CSV_URL, timeout=60) as resp:
         text = resp.read().decode("utf-8", errors="replace")
     rows = list(csv.DictReader(io.StringIO(text)))
     converted = [convert_row(r) for r in rows if r.get("name")]
 
-    merged = curated + converted
-    OUT_PATH.write_text(json.dumps(merged, indent=1, ensure_ascii=False))
+    OUT_PATH.write_text(json.dumps(converted, indent=1, ensure_ascii=False))
     funded = sum(1 for r in converted if r["last_funding_at"])
     print(
-        f"Wrote {len(merged)} records to {OUT_PATH} "
-        f"({len(curated)} curated demo + {len(converted)} ODM; "
-        f"{funded} with funding events)"
+        f"Wrote {len(converted)} ODM records to {OUT_PATH} "
+        f"({funded} with funding events; no curated/hand-written records)"
     )
     return 0
 

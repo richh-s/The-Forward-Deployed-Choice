@@ -1,8 +1,12 @@
-"""Generate the NovaPay briefs by RUNNING the enrichment pipeline.
+"""Generate hiring-signal + competitor-gap briefs by RUNNING the pipeline.
 
-Writes data/hiring_signal_brief_novapay.json and
-data/competitor_gap_brief_novapay.json from live pipeline output over the
-Crunchbase ODM sample + layoffs.fyi data (run from the repo root — the
+Usage:
+    python scripts/export_hiring_brief.py [--company "Name"]
+
+Default company: the same deterministic data-driven pick the demo seed uses
+(most recently funded ODM company in the Tenacious ICP bands) — nothing
+hand-chosen. Output: data/hiring_signal_brief_<slug>.json and
+data/competitor_gap_brief_<slug>.json (run from the repo root — the
 pipeline reads data/ paths relative to cwd).
 
 The output is honestly labeled: several AI-maturity sub-signals and the
@@ -21,7 +25,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from enrichment.live_sources import has_fabricated_sources
 from enrichment.pipeline import enrich_company, generate_competitor_gap_brief
 
-COMPANY = "NovaPay Technologies"
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
+from seed_demo_workspace import pick_demo_company  # noqa: E402
+
+import argparse  # noqa: E402
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--company", default="",
+                    help="company name (default: the data-driven demo pick)")
+args = parser.parse_args()
+COMPANY = args.company or pick_demo_company()["name"]
+SLUG = "".join(c for c in COMPANY.lower() if c.isalnum() or c == " ").replace(" ", "_")
 
 result = enrich_company(COMPANY)
 signals = result.get("signals", {})
@@ -30,7 +44,7 @@ sector = (
     (result.get("firmographics") or {}).get("industry", "")
 ).split(",")[0].strip() or "fintech"
 gap = generate_competitor_gap_brief(
-    COMPANY, "novapay.example", ai_score, sector=sector
+    COMPANY, f"{SLUG.replace('_', '')}.example", ai_score, sector=sector
 )
 
 brief = {
@@ -43,13 +57,13 @@ brief = {
 }
 
 os.makedirs("data", exist_ok=True)
-with open("data/hiring_signal_brief_novapay.json", "w") as f:
+with open(f"data/hiring_signal_brief_{SLUG}.json", "w") as f:
     json.dump(brief, f, indent=2)
-with open("data/competitor_gap_brief_novapay.json", "w") as f:
+with open(f"data/competitor_gap_brief_{SLUG}.json", "w") as f:
     json.dump(gap, f, indent=2)
 
-print("Saved: data/hiring_signal_brief_novapay.json (pipeline-generated)")
-print("Saved: data/competitor_gap_brief_novapay.json (pipeline-generated)")
+print(f"Saved: data/hiring_signal_brief_{SLUG}.json (pipeline-generated)")
+print(f"Saved: data/competitor_gap_brief_{SLUG}.json (pipeline-generated)")
 for i, key in enumerate([
     "signal_1_funding_event", "signal_2_job_post_velocity",
     "signal_3_layoff_event", "signal_4_leadership_change",

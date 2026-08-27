@@ -1,9 +1,12 @@
 """Seed a ready-to-demo Tenacious workspace into the engine database.
 
 Creates the workspace (playbook built from tenacious_sales_data/seed), an
-admin user, one campaign, and the NovaPay prospect with its real enrichment
-signals — so the full flow (compose → judge → approve → send-to-sink →
-reply → booking) can be demonstrated immediately after `uvicorn server:app`.
+admin user, one campaign, and ONE demo prospect — a real company picked
+deterministically from the handed Crunchbase ODM sample (most recent
+funding inside the Tenacious ICP headcount bands), enriched live by the
+pipeline, with an explicitly synthetic contact per the challenge's data
+rule (real public firmographics + fictitious contact details). Nothing is
+hand-written: change the dataset and the pick changes with it.
 
 Usage:
     python scripts/seed_demo_workspace.py --email you@example.com --password <pw>
@@ -137,6 +140,39 @@ def build_playbook() -> dict:
     }
 
 
+# Tenacious ICP headcount bands (segments 1-2 of the handed ICP definition).
+ICP_BANDS = ("11-50", "51-100", "101-250", "251-500", "501-1000", "1001-5000")
+
+
+def pick_demo_company() -> dict:
+    """Deterministic, data-driven pick from the handed ODM sample: the most
+    recently funded company inside the ICP headcount bands (preferring
+    records with named people, so the leadership signals have real data);
+    falls back to the most recently funded, then the first record."""
+    records = json.loads((BASE / "data" / "crunchbase_odm_sample.json").read_text())
+    funded = [r for r in records if r.get("last_funding_at")]
+    in_icp = [r for r in funded if r.get("num_employees_enum") in ICP_BANDS]
+    pool = in_icp or funded or records
+    pool.sort(
+        key=lambda r: (r.get("last_funding_at", ""), len(r.get("people", []))),
+        reverse=True,
+    )
+    return pool[0]
+
+
+def build_demo_signals(company_name: str) -> dict:
+    """Live pipeline enrichment for the demo prospect (honest results only —
+    lookups respect ENRICHMENT_LIVE_LOOKUPS). Returns {} on failure so the
+    prospect simply seeds as 'new' and enriches later via a source."""
+    try:
+        from enrichment.pipeline import enrich_company
+
+        return enrich_company(company_name).get("signals", {})
+    except Exception as exc:  # noqa: BLE001 — seeding must not hard-fail
+        print(f"(enrichment skipped: {exc})")
+        return {}
+
+
 async def main(email: str, password: str, update: bool = False) -> None:
     async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -172,9 +208,11 @@ async def main(email: str, password: str, update: bool = False) -> None:
             role="admin",
         ))
 
+        sector = (pick_demo_company().get("category_list") or "Outbound")
+        sector = sector.split(",")[0].strip() or "Outbound"
         campaign = Campaign(
             workspace_id=workspace.id,
-            name="Fintech Series B outreach",
+            name=f"{sector} outreach",
             status="draft",  # activate from the dashboard
             require_approval=True,
             sequence=[
@@ -185,26 +223,33 @@ async def main(email: str, password: str, update: bool = False) -> None:
         db.add(campaign)
         await db.flush()
 
-        brief_path = BASE / "data" / "hiring_signal_brief_novapay.json"
-        signals = {}
-        if brief_path.exists():
-            brief = json.loads(brief_path.read_text())
-            signals = brief.get("signals", {})
-            # The pipeline labels proxy-derived output synthetic — carry the
-            # marker so the composer keeps it in inquiry mode (same contract
-            # as the live enrichment service).
-            if signals and brief.get("synthetic"):
-                signals["_synthetic"] = True
+        company = pick_demo_company()
+        signals = build_demo_signals(company["name"])
+        slug_mail = "".join(
+            c for c in company["name"].lower() if c.isalnum()
+        ) or "demo"
+        title = next(
+            (p.get("title") for p in company.get("people", [])
+             if p.get("title")),
+            "Engineering lead",
+        )
         db.add(Prospect(
             workspace_id=workspace.id,
             campaign_id=campaign.id,
-            email="jordan.reyes@novapay.example",
-            name="Jordan Reyes",
-            company="NovaPay Technologies",
-            title="VP Engineering",
+            # Fictitious contact details on real firmographics — the
+            # challenge's sanctioned formula. The .example TLD can never
+            # deliver, and the name declares itself synthetic.
+            email=f"demo.contact@{slug_mail}.example",
+            name="Demo Contact (synthetic)",
+            company=company["name"],
+            title=title,
             signals=signals,
-            stage="enriched",
+            stage="enriched" if signals else "new",
         ))
+        print(f"Demo prospect: {company['name']} "
+              f"(funding {company.get('last_funding_at') or 'n/a'}, "
+              f"{company.get('num_employees_enum') or '?'} employees) — "
+              "picked from the ODM sample, enriched by the pipeline.")
         print(
             "Seeded workspace 'tenacious' with admin "
             f"{email} — log in at /login, review Settings, then activate the "

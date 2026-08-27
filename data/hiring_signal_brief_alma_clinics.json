@@ -1,28 +1,28 @@
 {
-  "company": "NovaPay Technologies",
-  "crunchbase_id": "novapay-technologies-uuid-001",
-  "last_enriched_at": "2026-08-27T14:31:10.409665+00:00",
+  "company": "Alma Clinics",
+  "crunchbase_id": "146bb813-7082-4ee6-acc2-47e6b8f3164d",
+  "last_enriched_at": "2026-08-27T14:45:34.809178+00:00",
   "synthetic": false,
   "firmographics": {
-    "employees": "51-100",
-    "industry": "Fintech,Payments",
-    "location": "Austin, TX",
-    "funding_total_usd": 24000000
+    "employees": "11-50",
+    "industry": "Health Care,Hospital,Medical",
+    "location": ", AF",
+    "funding_total_usd": 2800000
   },
   "signals": {
     "signal_1_funding_event": {
-      "crunchbase_id": "novapay-technologies-uuid-001",
+      "crunchbase_id": "146bb813-7082-4ee6-acc2-47e6b8f3164d",
       "present": false,
-      "days_ago": 194,
-      "amount_usd": 16000000,
-      "round_type": "Series B",
+      "days_ago": 819,
+      "amount_usd": 2800000,
+      "round_type": "seed",
       "confidence": "low",
       "source": "crunchbase_odm",
       "firmographics": {
-        "employees": "51-100",
-        "industry": "Fintech,Payments",
-        "location": "Austin, TX",
-        "funding_total_usd": 24000000
+        "employees": "11-50",
+        "industry": "Health Care,Hospital,Medical",
+        "location": ", AF",
+        "funding_total_usd": 2800000
       }
     },
     "signal_2_job_post_velocity": {
@@ -30,7 +30,7 @@
       "confidence": "low",
       "source": "no_public_job_board_found",
       "checked": [
-        "greenhouse/lever/ashby under slugs ['novapaytechnologies', 'novapay-technologies', 'novapay']"
+        "greenhouse/lever/ashby under slugs ['almaclinics', 'alma-clinics', 'alma']"
       ],
       "note": "No public Greenhouse/Lever/Ashby board found under the expected names. Absence of a posting feed is not proof the company isn't hiring."
     },
@@ -65,10 +65,11 @@
         },
         {
           "signal": "github_org_activity",
-          "status": "No public GitHub org found under expected names \u2014 not scored (private orgs are invisible)",
+          "status": "Public org has 29 repos, none ML/AI-related (absence is not proof of absence)",
           "weight": "medium",
-          "confidence": "low",
-          "checked": false
+          "confidence": "medium",
+          "checked": true,
+          "source_url": "https://github.com/alma"
         },
         {
           "signal": "modern_data_ml_stack",
@@ -92,9 +93,9 @@
           "checked": false
         }
       ],
-      "confidence": "low",
-      "dimensions_checked": 1,
-      "score_rationale": "Score 0/3 from 1 verified dimension(s): named_ai_ml_leadership. 5 dimension(s) not checked (no public source) and contribute nothing. Absence of a public signal is NOT proof of absence of capability."
+      "confidence": "medium",
+      "dimensions_checked": 2,
+      "score_rationale": "Score 0/3 from 2 verified dimension(s): named_ai_ml_leadership, github_org_activity. 4 dimension(s) not checked (no public source) and contribute nothing. Absence of a public signal is NOT proof of absence of capability."
     },
     "signal_6_icp_segment": {
       "segment": "abstain",

@@ -6,8 +6,8 @@ exercise them. This script reads the workspace's stored credentials from the
 database, signs the payload exactly as the provider would, and POSTs it.
 
 Usage (run with the same DATABASE_URL as the server):
-    python scripts/simulate_webhooks.py reply   --slug tenacious --from-email jordan.reyes@novapay.example --text "Sounds interesting — what would a 3-engineer pod cost?"
-    python scripts/simulate_webhooks.py booking --slug tenacious --prospect-email jordan.reyes@novapay.example --hours-ahead 20
+    python scripts/simulate_webhooks.py reply   --slug tenacious --from-email demo.contact@<company>.example --text "Sounds interesting — what would a 3-engineer pod cost?"
+    python scripts/simulate_webhooks.py booking --slug tenacious --prospect-email demo.contact@<company>.example --hours-ahead 20
     python scripts/simulate_webhooks.py sms     --slug tenacious --from-phone +254700000001 --text STOP
     python scripts/simulate_webhooks.py delivery --slug tenacious --event email.bounced --to someone@example.com
 

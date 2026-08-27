@@ -245,34 +245,54 @@ def get_job_post_velocity(company_name: str) -> dict:
 
 
 def get_leadership_change(company_name: str) -> dict:
-    with open(CRUNCHBASE_ODM_PATH) as f:
-        records = json.load(f)
-    match = next(
-        (r for r in records if company_name.lower() in r.get("name", "").lower()),
-        None
-    )
-    if match:
-        for person in match.get("people", []):
-            if any(
-                title in person.get("title", "")
-                for title in ["CTO", "VP Engineering", "VP Eng"]
-            ):
-                start = person.get("started_on", "")
-                if start:
-                    try:
-                        days_ago = (
-                            datetime.utcnow() - datetime.fromisoformat(start)
-                        ).days
-                        if days_ago <= 90:
-                            return {
-                                "present":    True,
-                                "role":       person["title"],
-                                "days_ago":   days_ago,
-                                "confidence": "medium",
-                                "source":     "crunchbase_odm"
-                            }
-                    except ValueError:
-                        pass
+    """New CTO/VP-Eng-style leadership within 90 days, from the handed ODM
+    data: dated leadership_hire news events (with citable links) first, then
+    dated titles in the people list. No event → honest absent."""
+    record = _odm_record(company_name)
+    if record is None:
+        return {"present": False, "confidence": "low",
+                "source": "crunchbase_odm", "note": "company not in ODM sample"}
+
+    ENG_KEYWORDS = ("cto", "chief technology", "vp engineering",
+                    "vp of engineering", "head of engineering")
+    for event in record.get("leadership_events", []):
+        label = str(event.get("label", "")).lower()
+        if not any(k in label for k in ENG_KEYWORDS + ("leadership", "ceo")):
+            continue
+        try:
+            days_ago = (datetime.utcnow()
+                        - datetime.fromisoformat(event["date"])).days
+        except (KeyError, ValueError):
+            continue
+        if 0 <= days_ago <= 90:
+            return {
+                "present":    True,
+                "role":       event.get("label", "")[:120],
+                "days_ago":   days_ago,
+                "confidence": "high",  # dated news event with a source link
+                "source":     "crunchbase_odm_leadership_hire",
+                "source_url": event.get("source_url", ""),
+            }
+
+    for person in record.get("people", []):
+        title = str(person.get("title", ""))
+        if not any(k in title.lower() for k in ENG_KEYWORDS):
+            continue
+        start = person.get("started_on", "")
+        if start:
+            try:
+                days_ago = (datetime.utcnow()
+                            - datetime.fromisoformat(start)).days
+                if days_ago <= 90:
+                    return {
+                        "present":    True,
+                        "role":       title,
+                        "days_ago":   days_ago,
+                        "confidence": "medium",
+                        "source":     "crunchbase_odm",
+                    }
+            except ValueError:
+                pass
     return {"present": False, "confidence": "medium", "source": "crunchbase_odm"}
 
 

@@ -1,7 +1,7 @@
 {
-  "prospect_domain": "novapay.example",
-  "prospect_sector": "Fintech",
-  "generated_at": "2026-08-27T14:31:10.409622Z",
+  "prospect_domain": "almaclinics.example",
+  "prospect_sector": "Health Care",
+  "generated_at": "2026-08-27T14:45:34.809138Z",
   "prospect_ai_maturity_score": 0,
   "distribution_position": {
     "prospect_score": 0,
@@ -11,9 +11,9 @@
     "above_median": false,
     "peer_count": 5
   },
-  "sparse_sector": false,
-  "sparse_sector_note": "",
-  "competitor_selection_criteria": "Curated sector leaders for 'Fintech' in the Tenacious ICP band; each scored with the same live checks as the prospect (public job boards, Crunchbase ODM people, public GitHub). Findings exist only where a peer produced real evidence.",
+  "sparse_sector": true,
+  "sparse_sector_note": "Only 5 curated peers for 'Health Care'. Benchmarks are indicative; peer visibility varies by what each company makes public.",
+  "competitor_selection_criteria": "Curated sector leaders for 'Health Care' in the Tenacious ICP band; each scored with the same live checks as the prospect (public job boards, Crunchbase ODM people, public GitHub). Findings exist only where a peer produced real evidence.",
   "competitors_analyzed": [
     {
       "name": "Stripe",
@@ -22,7 +22,7 @@
       "ai_maturity_justification": [
         {
           "signal": "ai_adjacent_open_roles",
-          "status": "580 open roles, none AI/ML-titled",
+          "status": "578 open roles, none AI/ML-titled",
           "weight": "high",
           "confidence": "high",
           "checked": true,
@@ -347,6 +347,6 @@
     "all_peer_evidence_real": true,
     "findings_with_evidence": 2,
     "at_least_one_gap_high_confidence": true,
-    "sparse_sector_flagged": false
+    "sparse_sector_flagged": true
   }
 }

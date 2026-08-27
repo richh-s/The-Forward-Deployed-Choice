@@ -44,15 +44,23 @@ GAP_SIGNALS = {
 
 
 async def test_enrichment_service_returns_contract_shape():
+    import sys as _sys
+
     from enrichment.service import app as enrichment_app
 
+    # Data-driven: the same deterministic pick the demo seed uses — a REAL
+    # funded company from the handed ODM sample, nothing hand-written.
+    _sys.path.insert(0, "scripts")
+    from seed_demo_workspace import pick_demo_company
+
+    company = pick_demo_company()
     transport = httpx.ASGITransport(app=enrichment_app)
     async with httpx.AsyncClient(
         transport=transport, base_url="http://enrich"
     ) as client:
         resp = await client.post("/enrich", json={
-            "email": "jordan@novapay.example",
-            "company": "NovaPay Technologies",
+            "email": "demo@example.example",
+            "company": company["name"],
         })
     assert resp.status_code == 200
     body = resp.json()
@@ -64,9 +72,8 @@ async def test_enrichment_service_returns_contract_shape():
         "signal_5_ai_maturity", "signal_6_icp_segment", "competitor_gap",
     ):
         assert key in signals, key
-    # NovaPay is the curated funded record — Crunchbase reference present.
-    assert body["crunchbase_id"]
-    assert signals["signal_1_funding_event"]["crunchbase_id"]
+    # A funded ODM record carries its Crunchbase reference.
+    assert body["crunchbase_id"] == company["uuid"]
     gap = signals["competitor_gap"]
     assert gap["distribution_position"]["peer_count"] > 0
     assert isinstance(body.get("icp_segment"), (int, type(None)))
