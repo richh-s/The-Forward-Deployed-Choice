@@ -188,7 +188,13 @@ async def main(email: str, password: str, update: bool = False) -> None:
         brief_path = BASE / "data" / "hiring_signal_brief_novapay.json"
         signals = {}
         if brief_path.exists():
-            signals = json.loads(brief_path.read_text()).get("signals", {})
+            brief = json.loads(brief_path.read_text())
+            signals = brief.get("signals", {})
+            # The pipeline labels proxy-derived output synthetic — carry the
+            # marker so the composer keeps it in inquiry mode (same contract
+            # as the live enrichment service).
+            if signals and brief.get("synthetic"):
+                signals["_synthetic"] = True
         db.add(Prospect(
             workspace_id=workspace.id,
             campaign_id=campaign.id,

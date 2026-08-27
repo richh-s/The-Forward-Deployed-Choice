@@ -1,78 +1,104 @@
 {
   "company": "NovaPay Technologies",
-  "crunchbase_id": "novapay-technologies",
-  "last_enriched_at": "2026-04-22T10:00:00Z",
+  "crunchbase_id": "novapay-technologies-uuid-001",
+  "last_enriched_at": "2026-08-27T14:18:49.803033+00:00",
+  "synthetic": true,
   "firmographics": {
-    "employees": 52,
-    "industry": "Fintech",
+    "employees": "51-100",
+    "industry": "Fintech,Payments",
     "location": "Austin, TX",
-    "funding_total_usd": 16000000,
-    "last_funding_date": "2026-02-14",
-    "last_funding_type": "Series B"
+    "funding_total_usd": 24000000
   },
   "signals": {
     "signal_1_funding_event": {
-      "present": true,
-      "days_ago": 67,
+      "crunchbase_id": "novapay-technologies-uuid-001",
+      "present": false,
+      "days_ago": 194,
       "amount_usd": 16000000,
       "round_type": "Series B",
-      "confidence": "high",
-      "source": "crunchbase_odm"
+      "confidence": "low",
+      "source": "crunchbase_odm",
+      "firmographics": {
+        "employees": "51-100",
+        "industry": "Fintech,Payments",
+        "location": "Austin, TX",
+        "funding_total_usd": 24000000
+      }
     },
     "signal_2_job_post_velocity": {
-      "open_roles_total": 14,
-      "engineering_roles": 9,
-      "delta_60d": "+9",
-      "confidence": "medium",
-      "source": "wellfound_scrape",
-      "honesty_note": "9 roles qualifies as growing \u2014 do not assert 'aggressive hiring'"
+      "open_roles_total": 8,
+      "engineering_roles": 3,
+      "delta_60d": "unknown",
+      "confidence": "low",
+      "source": "linkedin_fallback_mock"
     },
     "signal_3_layoff_event": {
       "present": false,
+      "layoff_detected": false,
       "confidence": "high",
       "source": "layoffs_fyi"
     },
     "signal_4_leadership_change": {
-      "present": true,
-      "role": "VP Engineering",
-      "days_ago": 38,
+      "present": false,
       "confidence": "medium",
-      "source": "crunchbase_press"
+      "source": "crunchbase_odm"
     },
     "signal_5_ai_maturity": {
-      "score": 2,
-      "justification": [
+      "score": 3,
+      "justifications": [
         {
           "signal": "ai_adjacent_open_roles",
+          "status": "3 of 8 roles are engineering/ML",
           "weight": "high",
-          "detail": "3 open ML engineer roles of 9 engineering roles"
+          "confidence": "high"
         },
         {
-          "signal": "named_ai_leadership",
+          "signal": "named_ai_ml_leadership",
+          "status": "Head of AI or ML leadership identified on LinkedIn",
           "weight": "high",
-          "detail": "Head of AI on public team page"
+          "confidence": "medium",
+          "source_url": "https://linkedin.com/company/novapay-technologies/people"
         },
         {
-          "signal": "modern_ml_stack",
+          "signal": "modern_data_ml_stack",
+          "status": "Standard SaaS stack detected without distinct ML infrastructure",
+          "weight": "medium",
+          "confidence": "medium"
+        },
+        {
+          "signal": "github_org_activity",
+          "status": "Active open source ML or data tool repositories found",
+          "weight": "medium",
+          "confidence": "medium",
+          "source_url": "https://github.com/novapay-technologies"
+        },
+        {
+          "signal": "executive_commentary",
+          "status": "No clear executive thought leadership on AI initiatives",
           "weight": "low",
-          "detail": "Snowflake + dbt via BuiltWith"
+          "confidence": "high"
+        },
+        {
+          "signal": "strategic_communications",
+          "status": "PR mostly focused on product launches, not technical innovation",
+          "weight": "low",
+          "confidence": "medium"
         }
       ],
-      "confidence": "medium"
+      "confidence": "medium",
+      "score_rationale": "Score 3/3 based on 6 signals. High-weight signals observed: ai_adjacent_open_roles, named_ai_ml_leadership, modern_data_ml_stack. Signal confidence: medium. Note: 5 of 6 signals are inferred from public proxies; absence of a signal is NOT proof of absence of capability."
     },
     "signal_6_icp_segment": {
-      "segment": "recently_funded",
-      "segment_number": 1,
-      "label": "Segment 1 \u2014 High Growth / Recently Funded",
-      "pitch_language": "scale your AI team faster than in-house hiring",
-      "confidence": "high",
-      "rationale": "Series B closed 67d ago. No layoff. 9 open engineering roles. AI maturity 2/3 sets pitch language.",
-      "conflict_flag": true,
-      "conflict_note": "Matches ['Segment 1 \u2014 High Growth / Recently Funded', 'Segment 3 \u2014 New Engineering Leadership', 'Segment 4 \u2014 AI / ML Capability Gap']. Using highest-priority segment. Human review recommended.",
+      "segment": "segment_4_specialized_capability",
+      "segment_number": 4,
+      "label": "Segment 4 \u2014 Specialized Capability Gap",
+      "pitch_language": "project-based consulting for ML platform build, agentic systems, or data-contracts architecture",
+      "confidence": 0.7,
+      "rationale": "AI maturity score 3/3 clears Segment 4 gate (\u22652 required). Pitch specialized capability, not headcount.",
+      "conflict_flag": false,
+      "conflict_note": "",
       "all_matched_segments": [
-        "Segment 1 \u2014 High Growth / Recently Funded",
-        "Segment 3 \u2014 New Engineering Leadership",
-        "Segment 4 \u2014 AI / ML Capability Gap"
+        "segment_4_specialized_capability"
       ]
     }
   }
