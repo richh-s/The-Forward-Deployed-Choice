@@ -7,11 +7,15 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showPw, setShowPw] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
 
   useEffect(() => {
     fetch("/api/v1/prelogin", { credentials: "same-origin" })
       .then((r) => r.json())
-      .then((d) => setCsrf(d.csrf_token))
+      .then((d) => {
+        setCsrf(d.csrf_token);
+        setNeedsSetup(Boolean(d.needs_setup));
+      })
       .catch(() => setError("Could not reach the server"));
   }, []);
 
@@ -44,6 +48,28 @@ export default function LoginPage() {
       /* fall through to success */
     }
     window.location.href = "/app/";
+  }
+
+  if (needsSetup) {
+    // Fresh install: no account exists yet, so a sign-in form would be a
+    // dead end — lead the first visitor to the one-shot setup instead.
+    return (
+      <div className="auth-shell">
+        <div className="auth-card">
+          <span className="logo">
+            <span className="mark">CE</span> Conversion Engine
+          </span>
+          <h2>Welcome — let&apos;s set up your workspace</h2>
+          <p className="muted" style={{ margin: "0 0 8px" }}>
+            This is a fresh installation. Create your workspace and admin
+            account first; it takes under a minute and only happens once.
+          </p>
+          <a className="btn" style={{ width: "100%", marginTop: 18, padding: 11 }} href="/setup">
+            Create your workspace
+          </a>
+        </div>
+      </div>
+    );
   }
 
   return (

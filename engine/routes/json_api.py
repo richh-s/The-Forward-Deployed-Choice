@@ -120,12 +120,20 @@ async def _common(db: AsyncSession, auth: AuthContext) -> dict:
 
 
 @router.get("/prelogin")
-async def prelogin() -> JSONResponse:
+async def prelogin(db: AsyncSession = Depends(get_db)) -> JSONResponse:
     """Mint the double-submit CSRF token for the SPA's login form (the
     cookie is httponly, so the token is returned in the body too — same
-    value the server-rendered login page embeds in its HTML)."""
+    value the server-rendered login page embeds in its HTML). Also reports
+    whether this is a fresh install, so the login page can lead a
+    first-time visitor to /setup instead of a form that cannot work."""
+    user_count = int((await db.execute(
+        select(func.count()).select_from(User)
+    )).scalar_one())
     token = new_prelogin_token()
-    response = JSONResponse({"csrf_token": token})
+    response = JSONResponse({
+        "csrf_token": token,
+        "needs_setup": user_count == 0,
+    })
     set_prelogin_cookie(response, token)
     return response
 
