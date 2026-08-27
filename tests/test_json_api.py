@@ -78,3 +78,20 @@ async def test_tenancy_isolation_on_json_api(client: httpx.AsyncClient):
     assert seed_a["prospect_email"] not in emails
     async with db_session() as db:
         assert await db.get(Prospect, seed_a["prospect_id"]) is not None
+
+
+async def test_login_with_stale_session_cookie_from_another_port(
+    client: httpx.AsyncClient,
+):
+    """Browser cookies ignore ports: a stale engine_session cookie from a
+    second instance on the same host must not 403 the login form."""
+    seed = await seed_workspace()
+    pre = (await client.get("/api/v1/prelogin")).json()
+    client.cookies.set("engine_session", "stale-token-from-another-instance")
+    resp = await client.post("/login", data={
+        "csrf_token": pre["csrf_token"],
+        "email": seed["email"],
+        "password": "correct-horse-battery",
+    })
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/"

@@ -46,11 +46,14 @@ async def require_csrf(request: Request) -> None:
     presented = str(form.get("csrf_token", ""))
 
     session_token = request.cookies.get(get_settings().session_cookie_name)
-    if session_token:
-        if verify_csrf_token(session_token, presented):
-            return
-        raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
+    if session_token and verify_csrf_token(session_token, presented):
+        return
 
+    # Fall through to the pre-login double-submit check even when a session
+    # cookie is present: cookies are not isolated by port, so a stale
+    # session cookie from another instance on the same host (e.g. a dev
+    # server on :8000 next to this one on :8010) or from a revoked session
+    # must not lock the user out of the login form itself.
     prelogin = request.cookies.get(PRELOGIN_COOKIE, "")
     if prelogin and presented and secrets.compare_digest(prelogin, presented):
         return
