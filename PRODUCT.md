@@ -212,6 +212,27 @@ tailnet — set it empty in a non-tailnet deploy to keep every role on Claude.
 | Cost tracking | Real per-model pricing on every LLM call, stored where it is incurred (compose+judge on the Draft, reply-agent cost on the reply Draft), aggregated in Analytics and the kill-switch |
 | Audit trail | Login success/failure, setup, campaign status, approvals/bulk-approve, credential & model changes, kill-switch pauses, job retries, PII deletions |
 
+## 2b. The two dashboards
+
+The product ships two equivalent operator UIs against the same backend:
+
+- **Server-rendered** (Jinja2, zero JavaScript) at `/` — no build step,
+  works everywhere, the reference implementation.
+- **Next.js** (React/TypeScript) at `/app` — a static export mounted
+  same-origin by FastAPI, so sessions and CSRF are identical. It reads from
+  the `/api/v1/*` JSON endpoints and writes through the *same* form routes
+  as the server-rendered UI (FormData + the csrf_token from `/api/v1/me`),
+  so validation, audit logging, and permissions exist exactly once. Extras
+  over the server-rendered UI: live-polling approvals/jobs pages,
+  per-field credential forms (no hand-typed JSON), and per-campaign LLM
+  cost columns.
+
+Build it with `cd frontend && npm ci && npm run build` (output lands in
+`frontend/out`, which the app auto-mounts when present — both the Render
+buildCommand and the Dockerfile do this). For frontend development,
+`npm run dev` proxies API and write routes to the FastAPI dev server on
+:8000. If `frontend/out` is absent the engine simply runs without `/app`.
+
 ## 3. Local development
 
 ```bash

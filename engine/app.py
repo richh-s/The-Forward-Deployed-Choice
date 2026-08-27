@@ -96,10 +96,23 @@ def create_app() -> FastAPI:
     from engine.routes.api import router as api_router
     from engine.routes.auth_routes import router as auth_router
     from engine.routes.dashboard import router as dashboard_router
+    from engine.routes.json_api import router as json_api_router
     from engine.routes.webhooks import router as webhooks_router
 
     app.include_router(auth_router)
     app.include_router(dashboard_router)
+    # Read-only JSON API for the Next.js dashboard (GET-only; session-auth'd
+    # via the same cookie — writes go through the CSRF-gated form routes).
+    app.include_router(json_api_router)
+
+    # The Next.js dashboard, when built (cd frontend && npm run build) —
+    # a static export served same-origin at /app. Absent in dev/CI unless
+    # built; the server-rendered dashboard at / is unaffected either way.
+    next_dir = Path(__file__).parent.parent / "frontend" / "out"
+    if next_dir.is_dir():
+        app.mount(
+            "/app", StaticFiles(directory=str(next_dir), html=True), name="next"
+        )
     # Every dashboard action route is a cookie-authenticated form POST —
     # CSRF-protect the whole router. Webhooks are signature-verified and
     # cookie-free, so they are mounted without it.

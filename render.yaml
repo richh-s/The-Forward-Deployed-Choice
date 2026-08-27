@@ -12,7 +12,13 @@ services:
     name: conversion-engine
     runtime: python
     plan: starter          # free tier spins down; never use it in production
-    buildCommand: pip install -r requirements.txt -c requirements.lock
+    # Render's native build image ships Node alongside Python, so the
+    # Next.js dashboard (served at /app) builds here too. If Node is ever
+    # unavailable in the build environment, deploy with the Dockerfile
+    # instead (it has a dedicated frontend build stage).
+    buildCommand: >-
+      pip install -r requirements.txt -c requirements.lock &&
+      cd frontend && npm ci --no-audit --no-fund && npm run build
     preDeployCommand: alembic upgrade head
     # --proxy-headers so request.url reflects the original https scheme
     # (Twilio signature verification signs the public URL). Render's proxy
