@@ -13,7 +13,11 @@ def enrich_company(company_name: str) -> dict:
     job_posts   = get_job_post_velocity(company_name)
     layoffs     = get_layoff_signal(company_name)
     leadership  = get_leadership_change(company_name)
-    ai_maturity = score_ai_maturity(company_name, job_posts)
+    ai_maturity = score_ai_maturity(
+        company_name, job_posts,
+        odm_record=_odm_record(company_name),
+        github=_github(company_name),
+    )
 
     signals = {
         "signal_1_funding_event":     funding,
@@ -31,6 +35,21 @@ def enrich_company(company_name: str) -> dict:
         "firmographics":    funding.get("firmographics", {}),
         "signals":          signals
     }
+
+
+def _odm_record(company_name: str) -> dict | None:
+    with open(CRUNCHBASE_ODM_PATH) as f:
+        records = json.load(f)
+    return next(
+        (r for r in records if company_name.lower() in r.get("name", "").lower()),
+        None,
+    )
+
+
+def _github(company_name: str) -> dict | None:
+    from enrichment.live_sources import fetch_github_org
+
+    return fetch_github_org(company_name)
 
 
 def get_crunchbase_signal(company_name: str) -> dict:
@@ -169,86 +188,60 @@ def _compute_velocity_delta(company_name: str, current_count: int):
 
 
 def get_job_post_velocity(company_name: str) -> dict:
-    # Scraping compliance: only public job-listing pages are accessed.
-    # robots.txt is respected via Playwright's default User-Agent; we do not
-    # bypass rate limits or access authenticated/member-only content.
-    # Sources checked: Wellfound public jobs page, LinkedIn public company page.
-    # delta_60d requires two snapshots 60 days apart; computed here as the
-    # difference between current count and a stored baseline in data/velocity_cache.json
-    # if present, otherwise reported as "unknown" (point estimate only).
-    try:
-        # Imported lazily: playwright lives in requirements-research.txt;
-        # without it the velocity signal degrades to the low-confidence
-        # fallback below instead of making the whole pipeline unimportable.
-        from playwright.sync_api import sync_playwright
+    """Open-role counts from the company's PUBLIC job board.
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            try:
-                # 1. Try Wellfound first (public page, no auth required)
-                url = f"https://wellfound.com/company/{company_name.lower().replace(' ', '-')}/jobs"
-                response = page.goto(url, timeout=10000)
-                if response and response.status < 400:
-                    try:
-                        page.wait_for_selector(".job-listing", timeout=3000)
-                        jobs = page.query_selector_all(".job-listing")
-                        if jobs:
-                            eng_jobs = [j for j in jobs if any(kw in j.inner_text().lower() for kw in ["engineer", "developer", "ml", "data"])]
-                            current_count = len(jobs)
-                            delta_60d = _compute_velocity_delta(company_name, current_count)
-                            return {
-                                "open_roles_total":  current_count,
-                                "engineering_roles": len(eng_jobs),
-                                "delta_60d":         delta_60d,
-                                "confidence":        "medium",
-                                "source":            "wellfound_scrape"
-                            }
-                    except Exception:
-                        pass # Selector timeout
+    Greenhouse, Lever, and Ashby expose unauthenticated JSON APIs for public
+    boards — a hit yields real posting titles and a citable board URL. A
+    miss is reported as exactly that: many companies use other ATSes, so
+    absence of a feed is NOT evidence about hiring, and this signal then
+    carries low confidence with no invented counts. (The earlier Playwright
+    Wellfound scrape is gone: it was blocked in practice and its fallback
+    fabricated a count — a made-up number is worse than an honest unknown.)
+    """
+    from enrichment.live_sources import (
+        count_roles,
+        fetch_job_board,
+        live_lookups_enabled,
+        slug_candidates,
+    )
 
-                # 2. Add fallback to generic text parse if selector fails
-                import re
-                page_text = page.inner_text("body").lower()
-                open_roles = len(re.findall(r"open role|vacanc|career|job opening", page_text))
-                ml_mentions = len(re.findall(r"ml engineer|data scientist|ai engineer|machine learning", page_text))
-                
-                if open_roles > 0:
-                    return {
-                        "open_roles_total":  max(open_roles, 5),
-                        "engineering_roles": max(ml_mentions, 1),
-                        "delta_60d":         "unknown",
-                        "confidence":        "low",
-                        "source":            "wellfound_text_fallback"
-                    }
-                    
-                # 3. Fallback to LinkedIn mock behavior to avoid breaking pipeline
-                return {
-                    "open_roles_total":  8,
-                    "engineering_roles": 3,
-                    "delta_60d":         "unknown",
-                    "confidence":        "low",
-                    "source":            "linkedin_fallback_mock"
-                }
-            except Exception as e:
-                return {
-                    "open_roles_total":  0,
-                    "engineering_roles": 0,
-                    "delta_60d":         "unknown",
-                    "confidence":        "low",
-                    "source":            f"scrape_error: {str(e)}"
-                }
-            finally:
-                browser.close()
-    except Exception as e:
-        # Failsafe if playwright fails entirely
+    if not live_lookups_enabled():
         return {
-            "open_roles_total":  0,
-            "engineering_roles": 0,
-            "delta_60d":         "unknown",
-            "confidence":        "low",
-            "source":            f"playwright_init_error: {str(e)}"
+            "present":    False,
+            "confidence": "low",
+            "source":     "not_checked_live_lookups_disabled",
+            "note":       "ENRICHMENT_LIVE_LOOKUPS is off — no network calls made.",
         }
+
+    board = fetch_job_board(company_name)
+    if board is None:
+        return {
+            "present":    False,
+            "confidence": "low",
+            "source":     "no_public_job_board_found",
+            "checked":    [
+                f"greenhouse/lever/ashby under slugs {slug_candidates(company_name)}"
+            ],
+            "note": (
+                "No public Greenhouse/Lever/Ashby board found under the "
+                "expected names. Absence of a posting feed is not proof the "
+                "company isn't hiring."
+            ),
+        }
+
+    total, eng, ml = count_roles(board["titles"])
+    delta_60d = _compute_velocity_delta(company_name, total)
+    return {
+        "present":           total > 0,
+        "open_roles_total":  total,
+        "engineering_roles": eng,
+        "ml_roles":          ml,
+        "sample_titles":     board["titles"][:5],
+        "delta_60d":         delta_60d,
+        "confidence":        "high",   # real, citable posting feed
+        "source":            board["source"],
+        "source_url":        board["board_url"],
+    }
 
 
 def get_leadership_change(company_name: str) -> dict:
@@ -283,333 +276,342 @@ def get_leadership_change(company_name: str) -> dict:
     return {"present": False, "confidence": "medium", "source": "crunchbase_odm"}
 
 
-def score_ai_maturity(company_name: str, job_posts: dict) -> dict:
-    import hashlib
+def score_ai_maturity(
+    company_name: str,
+    job_posts: dict,
+    odm_record: dict | None = None,
+    github: dict | None = None,
+) -> dict:
+    """0-3 AI-readiness score from VERIFIABLE public evidence only.
+
+    Three dimensions are actually checked (job-board role mix, ODM-listed
+    AI/ML leadership, public GitHub org activity); dimensions with no
+    integrated public source (tech stack, executive commentary, strategic
+    communications) are reported as explicitly NOT CHECKED and contribute
+    nothing — they are never invented. Every justification either cites a
+    real source or says "not checked"; `checked: false` entries are exactly
+    that.
+    """
+    from enrichment.live_sources import ml_repos
+
     score = 0
     justifications = []
-    
-    # 1. ai_adjacent_open_roles
-    eng_roles   = job_posts.get("engineering_roles", 0)
-    total_roles = job_posts.get("open_roles_total", 1)
-    ai_role_fraction = eng_roles / max(total_roles, 1)
-    
-    if ai_role_fraction >= 0.3:
+
+    # 1. AI-adjacent open roles — real board data when a public feed exists.
+    if job_posts.get("open_roles_total"):
+        eng_roles = job_posts.get("ml_roles", job_posts.get("engineering_roles", 0))
+        total_roles = job_posts["open_roles_total"]
+        fraction = eng_roles / max(total_roles, 1)
+        if fraction >= 0.3:
+            score += 2
+            status = f"{eng_roles} of {total_roles} open roles are AI/ML/data"
+            conf = "high"
+        elif fraction >= 0.1:
+            score += 1
+            status = f"{eng_roles} AI/ML/data roles among {total_roles} open"
+            conf = "high"
+        else:
+            status = f"{total_roles} open roles, none AI/ML-titled"
+            conf = "high"
         justifications.append({
-            "signal": "ai_adjacent_open_roles",
-            "status": f"{eng_roles} of {total_roles} roles are engineering/ML",
-            "weight": "high",
-            "confidence": "high"
+            "signal": "ai_adjacent_open_roles", "status": status,
+            "weight": "high", "confidence": conf, "checked": True,
+            "source_url": job_posts.get("source_url", ""),
         })
-        score += 2
-    elif ai_role_fraction >= 0.1:
-        justifications.append({
-            "signal": "ai_adjacent_open_roles",
-            "status": f"{eng_roles} engineering/ML roles detected",
-            "weight": "medium",
-            "confidence": "medium"
-        })
-        score += 1
     else:
         justifications.append({
             "signal": "ai_adjacent_open_roles",
-            "status": "No substantial AI/ML open roles identified",
-            "weight": "high",
-            "confidence": "high"
+            "status": "No public job feed found — not scored",
+            "weight": "high", "confidence": "low", "checked": False,
         })
 
-    # Hash company name for deterministic mocking of remaining 5 signals
-    c_hash = int(hashlib.md5(company_name.encode()).hexdigest()[:8], 16)
-    
-    # 2. named_ai_ml_leadership
-    if c_hash % 2 == 0:
+    # 2. Named AI/ML leadership — real people data from the Crunchbase ODM
+    # record (public dataset), not a guess.
+    ai_title = None
+    for person in (odm_record or {}).get("people", []):
+        title = str(person.get("title", ""))
+        if any(k in title.lower() for k in (
+            "ai", "machine learning", "ml", "data scien", "chief scientist",
+        )):
+            ai_title = title
+            break
+    if odm_record is None:
         justifications.append({
             "signal": "named_ai_ml_leadership",
-            "status": "Head of AI or ML leadership identified on LinkedIn",
-            "weight": "high",
-            "confidence": "medium",
-            "source_url": f"https://linkedin.com/company/{company_name.lower().replace(' ', '-')}/people"
+            "status": "Company not in the Crunchbase ODM sample — not scored",
+            "weight": "high", "confidence": "low", "checked": False,
         })
+    elif ai_title:
         score += 1
+        justifications.append({
+            "signal": "named_ai_ml_leadership",
+            "status": f"ODM record lists an AI/ML leadership title: {ai_title}",
+            "weight": "high", "confidence": "medium", "checked": True,
+            "source": "crunchbase_odm_people",
+        })
     else:
         justifications.append({
             "signal": "named_ai_ml_leadership",
-            "status": "No explicit AI/ML leadership titles found",
-            "weight": "high",
-            "confidence": "low"
+            "status": "No AI/ML leadership title in the ODM people list "
+                      "(list may be incomplete)",
+            "weight": "high", "confidence": "low", "checked": True,
+            "source": "crunchbase_odm_people",
         })
 
-    # 3. modern_data_ml_stack
-    if c_hash % 3 == 0:
-        justifications.append({
-            "signal": "modern_data_ml_stack",
-            "status": "Tech stack includes Snowflake, dbt, and PyTorch (inferred)",
-            "weight": "high",
-            "confidence": "low"
-        })
-        score += 1
-    else:
-        justifications.append({
-            "signal": "modern_data_ml_stack",
-            "status": "Standard SaaS stack detected without distinct ML infrastructure",
-            "weight": "medium",
-            "confidence": "medium"
-        })
-        
-    # 4. github_org_activity
-    if c_hash % 4 == 0:
+    # 3. Public GitHub org activity — real API lookup.
+    if github is None:
         justifications.append({
             "signal": "github_org_activity",
-            "status": "Active open source ML or data tool repositories found",
-            "weight": "medium",
-            "confidence": "medium",
-            "source_url": f"https://github.com/{company_name.lower().replace(' ', '-')}"
+            "status": "No public GitHub org found under expected names — "
+                      "not scored (private orgs are invisible)",
+            "weight": "medium", "confidence": "low", "checked": False,
         })
-        score += 1
-    else:
+    elif github.get("rate_limited"):
         justifications.append({
             "signal": "github_org_activity",
-            "status": "Minimal relevant open source repository activity",
-            "weight": "low",
-            "confidence": "high"
+            "status": "GitHub API rate-limited — not checked this run",
+            "weight": "medium", "confidence": "low", "checked": False,
         })
-        
-    # 5. executive_commentary
-    if c_hash % 5 == 0:
-        justifications.append({
-            "signal": "executive_commentary",
-            "status": "CEO recently mentioned AI roadmaps in public podcast",
-            "weight": "medium",
-            "confidence": "low"
-        })
-        score += 1
     else:
+        ml = ml_repos(github)
+        if ml:
+            score += 1
+            justifications.append({
+                "signal": "github_org_activity",
+                "status": f"Public ML/AI-related repos: {', '.join(ml[:4])}",
+                "weight": "medium", "confidence": "medium", "checked": True,
+                "source_url": github.get("org_url", ""),
+            })
+        else:
+            justifications.append({
+                "signal": "github_org_activity",
+                "status": f"Public org has {len(github.get('repos', []))} "
+                          "repos, none ML/AI-related "
+                          "(absence is not proof of absence)",
+                "weight": "medium", "confidence": "medium", "checked": True,
+                "source_url": github.get("org_url", ""),
+            })
+
+    # 4-6. No public source integrated — reported as such, never invented.
+    for signal, needs in (
+        ("modern_data_ml_stack", "a BuiltWith/Wappalyzer integration"),
+        ("executive_commentary", "a news/podcast search integration"),
+        ("strategic_communications", "a press/filings search integration"),
+    ):
         justifications.append({
-            "signal": "executive_commentary",
-            "status": "No clear executive thought leadership on AI initiatives",
-            "weight": "low",
-            "confidence": "high"
-        })
-        
-    # 6. strategic_communications
-    if c_hash % 6 == 0:
-        justifications.append({
-            "signal": "strategic_communications",
-            "status": "Company blog features deep technical engineering posts",
-            "weight": "medium",
-            "confidence": "medium"
-        })
-        score += 1
-    else:
-        justifications.append({
-            "signal": "strategic_communications",
-            "status": "PR mostly focused on product launches, not technical innovation",
-            "weight": "low",
-            "confidence": "medium"
+            "signal": signal,
+            "status": f"Not checked — requires {needs}; no value assumed",
+            "weight": "low", "confidence": "low", "checked": False,
         })
 
     final_score = min(score, 3)
-
-    # Confidence is derived from signal SOURCE quality, NOT from the score value.
-    # High-weight signals observed = high confidence; mostly low-weight or absent = low.
-    # This is intentionally independent of the score so a company can have score=2
-    # with low confidence (e.g., inferred from weak proxy signals only).
-    high_conf_signals = sum(
-        1 for j in justifications
+    checked = [j for j in justifications if j.get("checked")]
+    high_conf = sum(
+        1 for j in checked
         if j.get("confidence") in ("high",) and j.get("weight") == "high"
     )
-    if high_conf_signals >= 2:
-        signal_confidence = "high"
-    elif high_conf_signals == 1 or any(j.get("confidence") == "medium" and j.get("weight") == "high" for j in justifications):
-        signal_confidence = "medium"
+    if high_conf >= 1 and len(checked) >= 2:
+        signal_confidence = "high" if high_conf >= 2 else "medium"
+    elif checked:
+        signal_confidence = "medium" if any(
+            j.get("confidence") == "medium" for j in checked
+        ) else "low"
     else:
         signal_confidence = "low"
 
-    # Score rationale: human-readable summary persisted alongside the score
-    observed = [j["signal"] for j in justifications if j.get("confidence") not in ("low",) or j.get("weight") == "high"]
     score_rationale = (
-        f"Score {final_score}/3 based on {len(justifications)} signals. "
-        f"High-weight signals observed: {', '.join(observed[:3]) or 'none'}. "
-        f"Signal confidence: {signal_confidence}. "
-        "Note: 5 of 6 signals are inferred from public proxies; "
-        "absence of a signal is NOT proof of absence of capability."
+        f"Score {final_score}/3 from {len(checked)} verified dimension(s): "
+        f"{', '.join(j['signal'] for j in checked) or 'none'}. "
+        f"{len(justifications) - len(checked)} dimension(s) not checked "
+        "(no public source) and contribute nothing. "
+        "Absence of a public signal is NOT proof of absence of capability."
     )
 
     return {
-        "score":          final_score,
-        "justifications": justifications,
-        "confidence":     signal_confidence,
-        "score_rationale": score_rationale,
+        "score":               final_score,
+        "justifications":      justifications,
+        "confidence":          signal_confidence,
+        "dimensions_checked":  len(checked),
+        "score_rationale":     score_rationale,
     }
+
 
 def generate_competitor_gap_brief(company_name: str, domain: str, ai_maturity_score: int,
                                    sector: str = "Fintech") -> dict:
-    """
-    Generates a competitor gap brief for the prospect.
+    """Competitor gap brief built from the SAME live checks as the prospect.
 
-    Competitor selection criteria (documented here per rubric):
-    - Candidates are drawn from the same sector as the prospect (e.g., Fintech payments).
-    - Filtered to companies with 200–5000 employees (same ICP headcount band as Tenacious targets).
-    - Only companies with a public careers page and ≥1 engineering role listed are included.
-    - Ranked by AI maturity score (descending); top 5–10 selected.
-    - If fewer than 5 viable competitors are found (sparse sector), the brief notes this explicitly
-      and uses whatever peers are available rather than padding with unrelated companies.
-    - Source: Crunchbase ODM category peers + Wellfound sector search (public pages only).
-
-    Distribution position: prospect's AI maturity score is compared against the peer distribution
-    to compute a percentile rank and flag whether prospect is above/below the sector median.
+    Peer pools are a curated editorial choice (well-known sector leaders in
+    the Tenacious ICP band); every score and every piece of gap evidence,
+    however, comes from the same real lookups used on the prospect — public
+    job boards, the ODM dataset, public GitHub. Findings appear ONLY when a
+    peer produced real evidence for them; nothing is invented, and the
+    per-peer `evidence_basis` says exactly which checks succeeded.
     """
     from datetime import datetime
-    import hashlib
 
-    h = int(hashlib.md5(company_name.encode()).hexdigest()[:8], 16)
+    from enrichment.live_sources import ml_repos
 
-    # Sector-specific peer pools (top-quartile companies in same ICP band)
     SECTOR_PEERS = {
-        "Fintech":    ["Stripe", "Plaid", "Square", "Adyen", "Checkout.com", "Marqeta", "Rapyd"],
-        "DataOps":    ["Monte Carlo", "Great Expectations", "dbt Labs", "Databricks", "Fivetran"],
+        "Fintech":    ["Stripe", "Plaid", "Square", "Adyen", "Checkout.com"],
+        "DataOps":    ["Monte Carlo", "dbt Labs", "Databricks", "Fivetran", "Airbyte"],
         "DevTools":   ["GitHub", "GitLab", "CircleCI", "Snyk", "Datadog"],
         "default":    ["Stripe", "Plaid", "Square", "Adyen", "Checkout.com"],
     }
-
-    # Selection: use sector pool, limit to 5–10, handle sparse case.
-    # A sector is "sparse" if it is not in the known peer map OR has fewer than 5 peers.
     known_sector = sector in SECTOR_PEERS
     candidate_pool = SECTOR_PEERS.get(sector, SECTOR_PEERS["default"])
     candidate_pool = [p for p in candidate_pool if p.lower() != company_name.lower()]
-
     sparse_sector = not known_sector or len(candidate_pool) < 5
-    peers = candidate_pool[:7]  # cap at 7 for readability
+    peers = candidate_pool[:5]
 
     analyzed = []
-    for i, peer in enumerate(peers):
-        # Call the SAME score_ai_maturity() function used for the prospect.
-        # job_posts is constructed deterministically per competitor so the pipeline
-        # runs without live scraping (avoids rate limits); the identical scoring
-        # function preserves full comparability of results.
-        peer_hash = int(hashlib.md5(peer.encode()).hexdigest()[:8], 16)
-        proxy_job_posts = {
-            "engineering_roles": (peer_hash % 8) + 1,
-            "open_roles_total":  (peer_hash % 15) + 5,
-            "delta_60d":         "unknown",
-            "confidence":        "medium",
-            "source":            "proxy_for_competitor_comparison",
-        }
-        peer_maturity = score_ai_maturity(peer, proxy_job_posts)
-        pscore = peer_maturity["score"]
+    for peer in peers:
+        peer_jobs = get_job_post_velocity(peer)
+        peer_record = _odm_record(peer)
+        peer_github = _github(peer)
+        peer_maturity = score_ai_maturity(
+            peer, peer_jobs, odm_record=peer_record, github=peer_github
+        )
+        basis = [
+            j["signal"] for j in peer_maturity["justifications"] if j.get("checked")
+        ]
         analyzed.append({
             "name": peer,
-            "domain": f"{peer.lower().replace(' ', '').replace('.com', '')}.com",
-            "ai_maturity_score":           pscore,
+            "ai_maturity_score":           peer_maturity["score"],
             "ai_maturity_confidence":      peer_maturity["confidence"],
             "ai_maturity_justification":   peer_maturity["justifications"],
             "ai_maturity_score_rationale": peer_maturity.get("score_rationale", ""),
-            "headcount_band": "500_to_2000" if i % 2 == 0 else "2000_plus",
-            "top_quartile": (pscore >= 2),
-            "sources_checked": [
-                f"https://{peer.lower().replace(' ', '-')}.com/careers",
-                f"https://wellfound.com/company/{peer.lower().replace(' ', '-')}/jobs",
-            ]
+            "headcount_band": (peer_record or {}).get("num_employees_enum", "unknown"),
+            "evidence_basis": basis,
+            "top_quartile": peer_maturity["score"] >= 2,
+            "_jobs": peer_jobs,
+            "_github": peer_github,
         })
 
-    # Distribution position: where does the prospect sit vs. peer scores?
     peer_scores = [a["ai_maturity_score"] for a in analyzed]
     if peer_scores:
-        below_prospect = sum(1 for s in peer_scores if s < ai_maturity_score)
-        percentile = round(below_prospect / len(peer_scores) * 100)
-        sector_median = sorted(peer_scores)[len(peer_scores) // 2]
-        sector_top_quartile = sorted(peer_scores)[int(len(peer_scores) * 0.75)]
+        below = sum(1 for x in peer_scores if x < ai_maturity_score)
         distribution_position = {
             "prospect_score": ai_maturity_score,
-            "sector_median": sector_median,
-            "sector_top_quartile_score": sector_top_quartile,
-            "prospect_percentile": percentile,
-            "above_median": ai_maturity_score > sector_median,
-            "above_top_quartile": ai_maturity_score >= sector_top_quartile,
+            "sector_median": sorted(peer_scores)[len(peer_scores) // 2],
+            "sector_top_quartile_score":
+                sorted(peer_scores)[int(len(peer_scores) * 0.75)],
+            "prospect_percentile": round(below / len(peer_scores) * 100),
+            "above_median":
+                ai_maturity_score > sorted(peer_scores)[len(peer_scores) // 2],
             "peer_count": len(analyzed),
         }
     else:
         distribution_position = {"note": "no peers available for comparison"}
 
+    # Gap findings: constructed ONLY from real per-peer evidence.
+    gap_findings = []
+
+    hiring_evidence = []
+    for a in analyzed:
+        jobs = a["_jobs"]
+        if jobs.get("ml_roles"):
+            samples = [
+                t for t in jobs.get("sample_titles", [])
+                if any(k in t.lower() for k in ("ml", "ai", "machine", "data"))
+            ][:2]
+            hiring_evidence.append({
+                "competitor_name": a["name"],
+                "evidence": f"{jobs['ml_roles']} open AI/ML/data roles on their "
+                            f"public job board"
+                            + (f" (e.g. {'; '.join(samples)})" if samples else ""),
+                "source_url": jobs.get("source_url", ""),
+            })
+    if hiring_evidence:
+        gap_findings.append({
+            "practice": "Active AI/ML engineering hiring",
+            "peer_evidence": hiring_evidence[:3],
+            "prospect_state": (
+                "Prospect's public job feed shows no AI/ML-titled roles"
+                if ai_maturity_score < 2 else
+                "Prospect also shows AI-adjacent hiring"
+            ),
+            "confidence": "high" if ai_maturity_score < 2 else "low",
+            "segment_relevance": ["segment_4_specialized_capability",
+                                   "segment_1_series_a_b"],
+        })
+
+    github_evidence = []
+    for a in analyzed:
+        gh = a["_github"]
+        if gh and not gh.get("rate_limited"):
+            ml = ml_repos(gh)
+            if ml:
+                github_evidence.append({
+                    "competitor_name": a["name"],
+                    "evidence": f"Public ML/AI repositories: {', '.join(ml[:3])}",
+                    "source_url": gh.get("org_url", ""),
+                })
+    if github_evidence:
+        gap_findings.append({
+            "practice": "Public open-source ML/AI engineering",
+            "peer_evidence": github_evidence[:3],
+            "prospect_state": "No public ML/AI repository activity found for "
+                              "the prospect (private work is invisible)",
+            "confidence": "medium",
+            "segment_relevance": ["segment_4_specialized_capability"],
+        })
+
+    leadership_evidence = []
+    for a in analyzed:
+        for j in a["ai_maturity_justification"]:
+            if (j["signal"] == "named_ai_ml_leadership" and j.get("checked")
+                    and "leadership title" in j.get("status", "")):
+                leadership_evidence.append({
+                    "competitor_name": a["name"],
+                    "evidence": j["status"],
+                    "source": "crunchbase_odm_people",
+                })
+    if leadership_evidence:
+        gap_findings.append({
+            "practice": "Named AI/ML leadership",
+            "peer_evidence": leadership_evidence[:3],
+            "prospect_state": "No AI/ML leadership title in the prospect's "
+                              "ODM people list",
+            "confidence": "medium",
+            "segment_relevance": ["segment_4_specialized_capability"],
+        })
+
+    for a in analyzed:  # internal working keys don't belong in the brief
+        a.pop("_jobs", None)
+        a.pop("_github", None)
+
     return {
         "prospect_domain": domain,
         "prospect_sector": sector,
-        "prospect_sub_niche": "B2B SaaS",
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "prospect_ai_maturity_score": ai_maturity_score,
-        "sector_top_quartile_benchmark": distribution_position.get("sector_top_quartile_score", 2),
         "distribution_position": distribution_position,
         "sparse_sector": sparse_sector,
         "sparse_sector_note": (
-            f"Only {len(peers)} viable peers found in '{sector}' sector. "
-            "Gap analysis uses available peers; benchmarks are indicative only."
+            f"Only {len(peers)} curated peers for '{sector}'. Benchmarks are "
+            "indicative; peer visibility varies by what each company makes public."
             if sparse_sector else ""
         ),
         "competitor_selection_criteria": (
-            f"Peers drawn from '{sector}' sector, 200–5000 employees, "
-            "public careers page with ≥1 engineering role. "
-            "Ranked by AI maturity score; top 5–10 selected. "
-            "Same score_ai_maturity() function applied to each peer."
+            f"Curated sector leaders for '{sector}' in the Tenacious ICP band; "
+            "each scored with the same live checks as the prospect (public job "
+            "boards, Crunchbase ODM people, public GitHub). Findings exist only "
+            "where a peer produced real evidence."
         ),
         "competitors_analyzed": analyzed,
-        "gap_findings": [
-            {
-                "practice": "Dedicated MLOps engineering capability",
-                "peer_evidence": [
-                    {
-                        "competitor_name": analyzed[0]["name"],
-                        "evidence": "Currently hiring for Platform ML Engineers (Staff-level).",
-                        "source_url": analyzed[0]["sources_checked"][0]
-                    },
-                    {
-                        "competitor_name": analyzed[1]["name"] if len(analyzed) > 1 else analyzed[0]["name"],
-                        "evidence": "Lists MLOps infrastructure roles on careers page (3 open roles).",
-                        "source_url": analyzed[min(1, len(analyzed)-1)]["sources_checked"][0]
-                    }
-                ],
-                "prospect_state": "No public engineering posts indicate a mature MLOps platform focus.",
-                "confidence": "high" if ai_maturity_score < 2 else "low",
-                "segment_relevance": ["segment_4_specialized_capability", "segment_1_series_a_b"]
-            },
-            {
-                "practice": "Executive investment in GenAI features",
-                "peer_evidence": [
-                    {
-                        "competitor_name": analyzed[0]["name"],
-                        "evidence": "CEO highlighted upcoming AI product lines in Q1 2026 earnings call.",
-                        "source_url": analyzed[0]["sources_checked"][0]
-                    },
-                    {
-                        "competitor_name": analyzed[1]["name"] if len(analyzed) > 1 else analyzed[0]["name"],
-                        "evidence": "Recently launched AI-powered transaction categorization (March 2026).",
-                        "source_url": analyzed[min(1, len(analyzed)-1)]["sources_checked"][0]
-                    }
-                ],
-                "prospect_state": "Lack of strategic communications surrounding native GenAI features.",
-                "confidence": "medium",
-                "segment_relevance": ["segment_3_leadership_transition"]
-            },
-            {
-                "practice": "Named AI/ML leadership (Head of AI or VP of ML)",
-                "peer_evidence": [
-                    {
-                        "competitor_name": analyzed[0]["name"],
-                        "evidence": "LinkedIn shows a VP of Machine Learning hired 8 months ago.",
-                        "source_url": f"https://linkedin.com/company/{analyzed[0]['name'].lower().replace(' ','-')}/people"
-                    }
-                ],
-                "prospect_state": "No AI-specific leadership title found on LinkedIn or company site.",
-                "confidence": "medium",
-                "segment_relevance": ["segment_4_specialized_capability"]
-            },
-        ],
+        "gap_findings": gap_findings,
         "suggested_pitch_shift": (
-            "Shift focus to standing up core MLOps capabilities to match tier-1 competitive velocity."
+            f"Lead with the '{gap_findings[0]['practice']}' gap — it has real "
+            "peer evidence."
+            if gap_findings else
+            "No evidenced gap found — open with questions, not comparisons."
         ),
         "gap_quality_self_check": {
-            "all_peer_evidence_has_source_url": True,
-            "at_least_one_gap_high_confidence": ai_maturity_score < 2,
-            "prospect_silent_but_sophisticated_risk": (ai_maturity_score >= 1),
+            "all_peer_evidence_real": True,
+            "findings_with_evidence": len(gap_findings),
+            "at_least_one_gap_high_confidence": any(
+                g["confidence"] == "high" for g in gap_findings
+            ),
             "sparse_sector_flagged": sparse_sector,
-            "distribution_position_computed": True,
-        }
+        },
     }

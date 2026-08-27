@@ -22,7 +22,11 @@ from tests.test_challenge_compliance import GAP_SIGNALS, _capture_compose
 # ── synthetic signals are quarantined into inquiry mode ──────────────
 
 
-async def test_enrichment_service_declares_synthetic():
+async def test_enrichment_service_synthetic_flag_is_a_tripwire():
+    """The flag is computed, not asserted: False when every signal is a real
+    lookup or an honest not-checked entry; True the moment any mock/proxy
+    source appears (the engine then forces inquiry mode)."""
+    from enrichment.live_sources import has_fabricated_sources
     from enrichment.service import app as enrichment_app
 
     transport = httpx.ASGITransport(app=enrichment_app)
@@ -34,7 +38,18 @@ async def test_enrichment_service_declares_synthetic():
             "company": "NovaPay Technologies",
         })
     assert resp.status_code == 200
-    assert resp.json()["synthetic"] is True
+    body = resp.json()
+    # Live lookups are disabled in tests; every signal must be real data or
+    # explicitly not-checked — nothing fabricated, so the flag is False...
+    assert body["synthetic"] is False
+    for sig in body["signals"].values():
+        if isinstance(sig, dict):
+            src = str(sig.get("source", ""))
+            assert "mock" not in src and "proxy" not in src
+    # ...and the tripwire still fires on any fabricated value.
+    assert has_fabricated_sources(
+        {"x": {"source": "linkedin_fallback_mock"}}
+    ) is True
 
 
 async def test_synthetic_source_marks_prospect_signals():

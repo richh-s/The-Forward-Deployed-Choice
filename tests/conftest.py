@@ -21,6 +21,9 @@ os.environ.update(
         "RUN_WORKER": "false",
         "ANTHROPIC_API_KEY": "test-key-unused",
         "BASE_URL": "http://testserver",
+        # Enrichment live lookups (job boards, GitHub) are real network
+        # calls — off in tests; signals honestly report "not checked".
+        "ENRICHMENT_LIVE_LOOKUPS": "false",
     }
 )
 

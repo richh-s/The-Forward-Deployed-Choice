@@ -26,6 +26,7 @@ import secrets
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
+from enrichment.live_sources import has_fabricated_sources
 from enrichment.pipeline import enrich_company, generate_competitor_gap_brief
 
 logger = logging.getLogger(__name__)
@@ -117,9 +118,8 @@ def enrich(prospect: ProspectIn, authorization: str | None = Header(default=None
         "crunchbase_id": (signals.get("signal_1_funding_event") or {}).get(
             "crunchbase_id", ""
         ),
-        # This pipeline derives several AI-maturity sub-signals and the
-        # competitor peer set from deterministic proxies, not live lookups
-        # (see enrichment/pipeline.py). The engine must never let these
-        # reach assertion mode: the flag forces inquiry-mode composition.
-        "synthetic": True,
+        # Computed, not asserted: True only when any signal value came from
+        # a mock/proxy instead of a real lookup or an honest not-checked
+        # entry. The engine forces inquiry mode whenever it is True.
+        "synthetic": has_fabricated_sources(signals),
     }

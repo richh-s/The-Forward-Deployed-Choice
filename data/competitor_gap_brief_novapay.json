@@ -1,449 +1,352 @@
 {
   "prospect_domain": "novapay.example",
   "prospect_sector": "Fintech",
-  "prospect_sub_niche": "B2B SaaS",
-  "generated_at": "2026-08-27T14:18:49.803023Z",
-  "prospect_ai_maturity_score": 3,
-  "sector_top_quartile_benchmark": 2,
+  "generated_at": "2026-08-27T14:31:10.409622Z",
+  "prospect_ai_maturity_score": 0,
   "distribution_position": {
-    "prospect_score": 3,
-    "sector_median": 2,
-    "sector_top_quartile_score": 2,
-    "prospect_percentile": 86,
-    "above_median": true,
-    "above_top_quartile": true,
-    "peer_count": 7
+    "prospect_score": 0,
+    "sector_median": 0,
+    "sector_top_quartile_score": 1,
+    "prospect_percentile": 0,
+    "above_median": false,
+    "peer_count": 5
   },
   "sparse_sector": false,
   "sparse_sector_note": "",
-  "competitor_selection_criteria": "Peers drawn from 'Fintech' sector, 200\u20135000 employees, public careers page with \u22651 engineering role. Ranked by AI maturity score; top 5\u201310 selected. Same score_ai_maturity() function applied to each peer.",
+  "competitor_selection_criteria": "Curated sector leaders for 'Fintech' in the Tenacious ICP band; each scored with the same live checks as the prospect (public job boards, Crunchbase ODM people, public GitHub). Findings exist only where a peer produced real evidence.",
   "competitors_analyzed": [
     {
       "name": "Stripe",
-      "domain": "stripe.com",
       "ai_maturity_score": 1,
-      "ai_maturity_confidence": "low",
+      "ai_maturity_confidence": "medium",
       "ai_maturity_justification": [
         {
           "signal": "ai_adjacent_open_roles",
-          "status": "2 engineering/ML roles detected",
-          "weight": "medium",
-          "confidence": "medium"
+          "status": "580 open roles, none AI/ML-titled",
+          "weight": "high",
+          "confidence": "high",
+          "checked": true,
+          "source_url": "https://boards.greenhouse.io/stripe"
         },
         {
           "signal": "named_ai_ml_leadership",
-          "status": "No explicit AI/ML leadership titles found",
+          "status": "Company not in the Crunchbase ODM sample \u2014 not scored",
           "weight": "high",
-          "confidence": "low"
-        },
-        {
-          "signal": "modern_data_ml_stack",
-          "status": "Standard SaaS stack detected without distinct ML infrastructure",
-          "weight": "medium",
-          "confidence": "medium"
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "github_org_activity",
-          "status": "Minimal relevant open source repository activity",
+          "status": "Public ML/AI-related repos: bun-toolkit, rainier",
+          "weight": "medium",
+          "confidence": "medium",
+          "checked": true,
+          "source_url": "https://github.com/stripe"
+        },
+        {
+          "signal": "modern_data_ml_stack",
+          "status": "Not checked \u2014 requires a BuiltWith/Wappalyzer integration; no value assumed",
           "weight": "low",
-          "confidence": "high"
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "executive_commentary",
-          "status": "No clear executive thought leadership on AI initiatives",
+          "status": "Not checked \u2014 requires a news/podcast search integration; no value assumed",
           "weight": "low",
-          "confidence": "high"
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "strategic_communications",
-          "status": "PR mostly focused on product launches, not technical innovation",
+          "status": "Not checked \u2014 requires a press/filings search integration; no value assumed",
           "weight": "low",
-          "confidence": "medium"
+          "confidence": "low",
+          "checked": false
         }
       ],
-      "ai_maturity_score_rationale": "Score 1/3 based on 6 signals. High-weight signals observed: ai_adjacent_open_roles, named_ai_ml_leadership, modern_data_ml_stack. Signal confidence: low. Note: 5 of 6 signals are inferred from public proxies; absence of a signal is NOT proof of absence of capability.",
-      "headcount_band": "500_to_2000",
-      "top_quartile": false,
-      "sources_checked": [
-        "https://stripe.com/careers",
-        "https://wellfound.com/company/stripe/jobs"
-      ]
+      "ai_maturity_score_rationale": "Score 1/3 from 2 verified dimension(s): ai_adjacent_open_roles, github_org_activity. 4 dimension(s) not checked (no public source) and contribute nothing. Absence of a public signal is NOT proof of absence of capability.",
+      "headcount_band": "unknown",
+      "evidence_basis": [
+        "ai_adjacent_open_roles",
+        "github_org_activity"
+      ],
+      "top_quartile": false
     },
     {
       "name": "Plaid",
-      "domain": "plaid.com",
-      "ai_maturity_score": 2,
-      "ai_maturity_confidence": "low",
+      "ai_maturity_score": 1,
+      "ai_maturity_confidence": "medium",
       "ai_maturity_justification": [
         {
           "signal": "ai_adjacent_open_roles",
-          "status": "4 engineering/ML roles detected",
-          "weight": "medium",
-          "confidence": "medium"
+          "status": "12 AI/ML/data roles among 101 open",
+          "weight": "high",
+          "confidence": "high",
+          "checked": true,
+          "source_url": "https://jobs.ashbyhq.com/plaid"
         },
         {
           "signal": "named_ai_ml_leadership",
-          "status": "No explicit AI/ML leadership titles found",
+          "status": "Company not in the Crunchbase ODM sample \u2014 not scored",
           "weight": "high",
-          "confidence": "low"
-        },
-        {
-          "signal": "modern_data_ml_stack",
-          "status": "Tech stack includes Snowflake, dbt, and PyTorch (inferred)",
-          "weight": "high",
-          "confidence": "low"
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "github_org_activity",
-          "status": "Minimal relevant open source repository activity",
+          "status": "Public org has 68 repos, none ML/AI-related (absence is not proof of absence)",
+          "weight": "medium",
+          "confidence": "medium",
+          "checked": true,
+          "source_url": "https://github.com/plaid"
+        },
+        {
+          "signal": "modern_data_ml_stack",
+          "status": "Not checked \u2014 requires a BuiltWith/Wappalyzer integration; no value assumed",
           "weight": "low",
-          "confidence": "high"
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "executive_commentary",
-          "status": "No clear executive thought leadership on AI initiatives",
+          "status": "Not checked \u2014 requires a news/podcast search integration; no value assumed",
           "weight": "low",
-          "confidence": "high"
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "strategic_communications",
-          "status": "PR mostly focused on product launches, not technical innovation",
+          "status": "Not checked \u2014 requires a press/filings search integration; no value assumed",
           "weight": "low",
-          "confidence": "medium"
+          "confidence": "low",
+          "checked": false
         }
       ],
-      "ai_maturity_score_rationale": "Score 2/3 based on 6 signals. High-weight signals observed: ai_adjacent_open_roles, named_ai_ml_leadership, modern_data_ml_stack. Signal confidence: low. Note: 5 of 6 signals are inferred from public proxies; absence of a signal is NOT proof of absence of capability.",
-      "headcount_band": "2000_plus",
-      "top_quartile": true,
-      "sources_checked": [
-        "https://plaid.com/careers",
-        "https://wellfound.com/company/plaid/jobs"
-      ]
+      "ai_maturity_score_rationale": "Score 1/3 from 2 verified dimension(s): ai_adjacent_open_roles, github_org_activity. 4 dimension(s) not checked (no public source) and contribute nothing. Absence of a public signal is NOT proof of absence of capability.",
+      "headcount_band": "unknown",
+      "evidence_basis": [
+        "ai_adjacent_open_roles",
+        "github_org_activity"
+      ],
+      "top_quartile": false
     },
     {
       "name": "Square",
-      "domain": "square.com",
-      "ai_maturity_score": 2,
+      "ai_maturity_score": 0,
+      "ai_maturity_confidence": "medium",
+      "ai_maturity_justification": [
+        {
+          "signal": "ai_adjacent_open_roles",
+          "status": "No public job feed found \u2014 not scored",
+          "weight": "high",
+          "confidence": "low",
+          "checked": false
+        },
+        {
+          "signal": "named_ai_ml_leadership",
+          "status": "Company not in the Crunchbase ODM sample \u2014 not scored",
+          "weight": "high",
+          "confidence": "low",
+          "checked": false
+        },
+        {
+          "signal": "github_org_activity",
+          "status": "Public org has 100 repos, none ML/AI-related (absence is not proof of absence)",
+          "weight": "medium",
+          "confidence": "medium",
+          "checked": true,
+          "source_url": "https://github.com/square"
+        },
+        {
+          "signal": "modern_data_ml_stack",
+          "status": "Not checked \u2014 requires a BuiltWith/Wappalyzer integration; no value assumed",
+          "weight": "low",
+          "confidence": "low",
+          "checked": false
+        },
+        {
+          "signal": "executive_commentary",
+          "status": "Not checked \u2014 requires a news/podcast search integration; no value assumed",
+          "weight": "low",
+          "confidence": "low",
+          "checked": false
+        },
+        {
+          "signal": "strategic_communications",
+          "status": "Not checked \u2014 requires a press/filings search integration; no value assumed",
+          "weight": "low",
+          "confidence": "low",
+          "checked": false
+        }
+      ],
+      "ai_maturity_score_rationale": "Score 0/3 from 1 verified dimension(s): github_org_activity. 5 dimension(s) not checked (no public source) and contribute nothing. Absence of a public signal is NOT proof of absence of capability.",
+      "headcount_band": "unknown",
+      "evidence_basis": [
+        "github_org_activity"
+      ],
+      "top_quartile": false
+    },
+    {
+      "name": "Adyen",
+      "ai_maturity_score": 0,
+      "ai_maturity_confidence": "medium",
+      "ai_maturity_justification": [
+        {
+          "signal": "ai_adjacent_open_roles",
+          "status": "227 open roles, none AI/ML-titled",
+          "weight": "high",
+          "confidence": "high",
+          "checked": true,
+          "source_url": "https://boards.greenhouse.io/adyen"
+        },
+        {
+          "signal": "named_ai_ml_leadership",
+          "status": "Company not in the Crunchbase ODM sample \u2014 not scored",
+          "weight": "high",
+          "confidence": "low",
+          "checked": false
+        },
+        {
+          "signal": "github_org_activity",
+          "status": "Public org has 66 repos, none ML/AI-related (absence is not proof of absence)",
+          "weight": "medium",
+          "confidence": "medium",
+          "checked": true,
+          "source_url": "https://github.com/adyen"
+        },
+        {
+          "signal": "modern_data_ml_stack",
+          "status": "Not checked \u2014 requires a BuiltWith/Wappalyzer integration; no value assumed",
+          "weight": "low",
+          "confidence": "low",
+          "checked": false
+        },
+        {
+          "signal": "executive_commentary",
+          "status": "Not checked \u2014 requires a news/podcast search integration; no value assumed",
+          "weight": "low",
+          "confidence": "low",
+          "checked": false
+        },
+        {
+          "signal": "strategic_communications",
+          "status": "Not checked \u2014 requires a press/filings search integration; no value assumed",
+          "weight": "low",
+          "confidence": "low",
+          "checked": false
+        }
+      ],
+      "ai_maturity_score_rationale": "Score 0/3 from 2 verified dimension(s): ai_adjacent_open_roles, github_org_activity. 4 dimension(s) not checked (no public source) and contribute nothing. Absence of a public signal is NOT proof of absence of capability.",
+      "headcount_band": "unknown",
+      "evidence_basis": [
+        "ai_adjacent_open_roles",
+        "github_org_activity"
+      ],
+      "top_quartile": false
+    },
+    {
+      "name": "Checkout.com",
+      "ai_maturity_score": 0,
       "ai_maturity_confidence": "low",
       "ai_maturity_justification": [
         {
           "signal": "ai_adjacent_open_roles",
-          "status": "2 engineering/ML roles detected",
-          "weight": "medium",
-          "confidence": "medium"
+          "status": "No public job feed found \u2014 not scored",
+          "weight": "high",
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "named_ai_ml_leadership",
-          "status": "No explicit AI/ML leadership titles found",
+          "status": "Company not in the Crunchbase ODM sample \u2014 not scored",
           "weight": "high",
-          "confidence": "low"
-        },
-        {
-          "signal": "modern_data_ml_stack",
-          "status": "Standard SaaS stack detected without distinct ML infrastructure",
-          "weight": "medium",
-          "confidence": "medium"
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "github_org_activity",
-          "status": "Minimal relevant open source repository activity",
-          "weight": "low",
-          "confidence": "high"
-        },
-        {
-          "signal": "executive_commentary",
-          "status": "CEO recently mentioned AI roadmaps in public podcast",
+          "status": "No public GitHub org found under expected names \u2014 not scored (private orgs are invisible)",
           "weight": "medium",
-          "confidence": "low"
-        },
-        {
-          "signal": "strategic_communications",
-          "status": "PR mostly focused on product launches, not technical innovation",
-          "weight": "low",
-          "confidence": "medium"
-        }
-      ],
-      "ai_maturity_score_rationale": "Score 2/3 based on 6 signals. High-weight signals observed: ai_adjacent_open_roles, named_ai_ml_leadership, modern_data_ml_stack. Signal confidence: low. Note: 5 of 6 signals are inferred from public proxies; absence of a signal is NOT proof of absence of capability.",
-      "headcount_band": "500_to_2000",
-      "top_quartile": true,
-      "sources_checked": [
-        "https://square.com/careers",
-        "https://wellfound.com/company/square/jobs"
-      ]
-    },
-    {
-      "name": "Adyen",
-      "domain": "adyen.com",
-      "ai_maturity_score": 3,
-      "ai_maturity_confidence": "medium",
-      "ai_maturity_justification": [
-        {
-          "signal": "ai_adjacent_open_roles",
-          "status": "4 of 11 roles are engineering/ML",
-          "weight": "high",
-          "confidence": "high"
-        },
-        {
-          "signal": "named_ai_ml_leadership",
-          "status": "No explicit AI/ML leadership titles found",
-          "weight": "high",
-          "confidence": "low"
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "modern_data_ml_stack",
-          "status": "Tech stack includes Snowflake, dbt, and PyTorch (inferred)",
-          "weight": "high",
-          "confidence": "low"
-        },
-        {
-          "signal": "github_org_activity",
-          "status": "Minimal relevant open source repository activity",
+          "status": "Not checked \u2014 requires a BuiltWith/Wappalyzer integration; no value assumed",
           "weight": "low",
-          "confidence": "high"
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "executive_commentary",
-          "status": "No clear executive thought leadership on AI initiatives",
+          "status": "Not checked \u2014 requires a news/podcast search integration; no value assumed",
           "weight": "low",
-          "confidence": "high"
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "strategic_communications",
-          "status": "PR mostly focused on product launches, not technical innovation",
+          "status": "Not checked \u2014 requires a press/filings search integration; no value assumed",
           "weight": "low",
-          "confidence": "medium"
+          "confidence": "low",
+          "checked": false
         }
       ],
-      "ai_maturity_score_rationale": "Score 3/3 based on 6 signals. High-weight signals observed: ai_adjacent_open_roles, named_ai_ml_leadership, modern_data_ml_stack. Signal confidence: medium. Note: 5 of 6 signals are inferred from public proxies; absence of a signal is NOT proof of absence of capability.",
-      "headcount_band": "2000_plus",
-      "top_quartile": true,
-      "sources_checked": [
-        "https://adyen.com/careers",
-        "https://wellfound.com/company/adyen/jobs"
-      ]
-    },
-    {
-      "name": "Checkout.com",
-      "domain": "checkout.com",
-      "ai_maturity_score": 2,
-      "ai_maturity_confidence": "medium",
-      "ai_maturity_justification": [
-        {
-          "signal": "ai_adjacent_open_roles",
-          "status": "No substantial AI/ML open roles identified",
-          "weight": "high",
-          "confidence": "high"
-        },
-        {
-          "signal": "named_ai_ml_leadership",
-          "status": "Head of AI or ML leadership identified on LinkedIn",
-          "weight": "high",
-          "confidence": "medium",
-          "source_url": "https://linkedin.com/company/checkout.com/people"
-        },
-        {
-          "signal": "modern_data_ml_stack",
-          "status": "Standard SaaS stack detected without distinct ML infrastructure",
-          "weight": "medium",
-          "confidence": "medium"
-        },
-        {
-          "signal": "github_org_activity",
-          "status": "Active open source ML or data tool repositories found",
-          "weight": "medium",
-          "confidence": "medium",
-          "source_url": "https://github.com/checkout.com"
-        },
-        {
-          "signal": "executive_commentary",
-          "status": "No clear executive thought leadership on AI initiatives",
-          "weight": "low",
-          "confidence": "high"
-        },
-        {
-          "signal": "strategic_communications",
-          "status": "PR mostly focused on product launches, not technical innovation",
-          "weight": "low",
-          "confidence": "medium"
-        }
-      ],
-      "ai_maturity_score_rationale": "Score 2/3 based on 6 signals. High-weight signals observed: ai_adjacent_open_roles, named_ai_ml_leadership, modern_data_ml_stack. Signal confidence: medium. Note: 5 of 6 signals are inferred from public proxies; absence of a signal is NOT proof of absence of capability.",
-      "headcount_band": "500_to_2000",
-      "top_quartile": true,
-      "sources_checked": [
-        "https://checkout.com.com/careers",
-        "https://wellfound.com/company/checkout.com/jobs"
-      ]
-    },
-    {
-      "name": "Marqeta",
-      "domain": "marqeta.com",
-      "ai_maturity_score": 2,
-      "ai_maturity_confidence": "medium",
-      "ai_maturity_justification": [
-        {
-          "signal": "ai_adjacent_open_roles",
-          "status": "No substantial AI/ML open roles identified",
-          "weight": "high",
-          "confidence": "high"
-        },
-        {
-          "signal": "named_ai_ml_leadership",
-          "status": "Head of AI or ML leadership identified on LinkedIn",
-          "weight": "high",
-          "confidence": "medium",
-          "source_url": "https://linkedin.com/company/marqeta/people"
-        },
-        {
-          "signal": "modern_data_ml_stack",
-          "status": "Standard SaaS stack detected without distinct ML infrastructure",
-          "weight": "medium",
-          "confidence": "medium"
-        },
-        {
-          "signal": "github_org_activity",
-          "status": "Active open source ML or data tool repositories found",
-          "weight": "medium",
-          "confidence": "medium",
-          "source_url": "https://github.com/marqeta"
-        },
-        {
-          "signal": "executive_commentary",
-          "status": "No clear executive thought leadership on AI initiatives",
-          "weight": "low",
-          "confidence": "high"
-        },
-        {
-          "signal": "strategic_communications",
-          "status": "PR mostly focused on product launches, not technical innovation",
-          "weight": "low",
-          "confidence": "medium"
-        }
-      ],
-      "ai_maturity_score_rationale": "Score 2/3 based on 6 signals. High-weight signals observed: ai_adjacent_open_roles, named_ai_ml_leadership, modern_data_ml_stack. Signal confidence: medium. Note: 5 of 6 signals are inferred from public proxies; absence of a signal is NOT proof of absence of capability.",
-      "headcount_band": "2000_plus",
-      "top_quartile": true,
-      "sources_checked": [
-        "https://marqeta.com/careers",
-        "https://wellfound.com/company/marqeta/jobs"
-      ]
-    },
-    {
-      "name": "Rapyd",
-      "domain": "rapyd.com",
-      "ai_maturity_score": 2,
-      "ai_maturity_confidence": "medium",
-      "ai_maturity_justification": [
-        {
-          "signal": "ai_adjacent_open_roles",
-          "status": "6 of 7 roles are engineering/ML",
-          "weight": "high",
-          "confidence": "high"
-        },
-        {
-          "signal": "named_ai_ml_leadership",
-          "status": "No explicit AI/ML leadership titles found",
-          "weight": "high",
-          "confidence": "low"
-        },
-        {
-          "signal": "modern_data_ml_stack",
-          "status": "Standard SaaS stack detected without distinct ML infrastructure",
-          "weight": "medium",
-          "confidence": "medium"
-        },
-        {
-          "signal": "github_org_activity",
-          "status": "Minimal relevant open source repository activity",
-          "weight": "low",
-          "confidence": "high"
-        },
-        {
-          "signal": "executive_commentary",
-          "status": "No clear executive thought leadership on AI initiatives",
-          "weight": "low",
-          "confidence": "high"
-        },
-        {
-          "signal": "strategic_communications",
-          "status": "PR mostly focused on product launches, not technical innovation",
-          "weight": "low",
-          "confidence": "medium"
-        }
-      ],
-      "ai_maturity_score_rationale": "Score 2/3 based on 6 signals. High-weight signals observed: ai_adjacent_open_roles, named_ai_ml_leadership, modern_data_ml_stack. Signal confidence: medium. Note: 5 of 6 signals are inferred from public proxies; absence of a signal is NOT proof of absence of capability.",
-      "headcount_band": "500_to_2000",
-      "top_quartile": true,
-      "sources_checked": [
-        "https://rapyd.com/careers",
-        "https://wellfound.com/company/rapyd/jobs"
-      ]
+      "ai_maturity_score_rationale": "Score 0/3 from 0 verified dimension(s): none. 6 dimension(s) not checked (no public source) and contribute nothing. Absence of a public signal is NOT proof of absence of capability.",
+      "headcount_band": "unknown",
+      "evidence_basis": [],
+      "top_quartile": false
     }
   ],
   "gap_findings": [
     {
-      "practice": "Dedicated MLOps engineering capability",
+      "practice": "Active AI/ML engineering hiring",
       "peer_evidence": [
         {
           "competitor_name": "Stripe",
-          "evidence": "Currently hiring for Platform ML Engineers (Staff-level).",
-          "source_url": "https://stripe.com/careers"
+          "evidence": "35 open AI/ML/data roles on their public job board (e.g. Account Executive, AI Sales; Account Executive, AI Startups (Hunter))",
+          "source_url": "https://boards.greenhouse.io/stripe"
         },
         {
           "competitor_name": "Plaid",
-          "evidence": "Lists MLOps infrastructure roles on careers page (3 open roles).",
-          "source_url": "https://plaid.com/careers"
+          "evidence": "12 open AI/ML/data roles on their public job board (e.g. Senior Data Engineer - Data Engineering; Staff Product Manager - AI Foundations)",
+          "source_url": "https://jobs.ashbyhq.com/plaid"
+        },
+        {
+          "competitor_name": "Adyen",
+          "evidence": "3 open AI/ML/data roles on their public job board",
+          "source_url": "https://boards.greenhouse.io/adyen"
         }
       ],
-      "prospect_state": "No public engineering posts indicate a mature MLOps platform focus.",
-      "confidence": "low",
+      "prospect_state": "Prospect's public job feed shows no AI/ML-titled roles",
+      "confidence": "high",
       "segment_relevance": [
         "segment_4_specialized_capability",
         "segment_1_series_a_b"
       ]
     },
     {
-      "practice": "Executive investment in GenAI features",
+      "practice": "Public open-source ML/AI engineering",
       "peer_evidence": [
         {
           "competitor_name": "Stripe",
-          "evidence": "CEO highlighted upcoming AI product lines in Q1 2026 earnings call.",
-          "source_url": "https://stripe.com/careers"
-        },
-        {
-          "competitor_name": "Plaid",
-          "evidence": "Recently launched AI-powered transaction categorization (March 2026).",
-          "source_url": "https://plaid.com/careers"
+          "evidence": "Public ML/AI repositories: bun-toolkit, rainier",
+          "source_url": "https://github.com/stripe"
         }
       ],
-      "prospect_state": "Lack of strategic communications surrounding native GenAI features.",
-      "confidence": "medium",
-      "segment_relevance": [
-        "segment_3_leadership_transition"
-      ]
-    },
-    {
-      "practice": "Named AI/ML leadership (Head of AI or VP of ML)",
-      "peer_evidence": [
-        {
-          "competitor_name": "Stripe",
-          "evidence": "LinkedIn shows a VP of Machine Learning hired 8 months ago.",
-          "source_url": "https://linkedin.com/company/stripe/people"
-        }
-      ],
-      "prospect_state": "No AI-specific leadership title found on LinkedIn or company site.",
+      "prospect_state": "No public ML/AI repository activity found for the prospect (private work is invisible)",
       "confidence": "medium",
       "segment_relevance": [
         "segment_4_specialized_capability"
       ]
     }
   ],
-  "suggested_pitch_shift": "Shift focus to standing up core MLOps capabilities to match tier-1 competitive velocity.",
+  "suggested_pitch_shift": "Lead with the 'Active AI/ML engineering hiring' gap \u2014 it has real peer evidence.",
   "gap_quality_self_check": {
-    "all_peer_evidence_has_source_url": true,
-    "at_least_one_gap_high_confidence": false,
-    "prospect_silent_but_sophisticated_risk": true,
-    "sparse_sector_flagged": false,
-    "distribution_position_computed": true
+    "all_peer_evidence_real": true,
+    "findings_with_evidence": 2,
+    "at_least_one_gap_high_confidence": true,
+    "sparse_sector_flagged": false
   }
 }

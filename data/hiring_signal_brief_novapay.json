@@ -1,8 +1,8 @@
 {
   "company": "NovaPay Technologies",
   "crunchbase_id": "novapay-technologies-uuid-001",
-  "last_enriched_at": "2026-08-27T14:18:49.803033+00:00",
-  "synthetic": true,
+  "last_enriched_at": "2026-08-27T14:31:10.409665+00:00",
+  "synthetic": false,
   "firmographics": {
     "employees": "51-100",
     "industry": "Fintech,Payments",
@@ -26,11 +26,13 @@
       }
     },
     "signal_2_job_post_velocity": {
-      "open_roles_total": 8,
-      "engineering_roles": 3,
-      "delta_60d": "unknown",
+      "present": false,
       "confidence": "low",
-      "source": "linkedin_fallback_mock"
+      "source": "no_public_job_board_found",
+      "checked": [
+        "greenhouse/lever/ashby under slugs ['novapaytechnologies', 'novapay-technologies', 'novapay']"
+      ],
+      "note": "No public Greenhouse/Lever/Ashby board found under the expected names. Absence of a posting feed is not proof the company isn't hiring."
     },
     "signal_3_layoff_event": {
       "present": false,
@@ -44,62 +46,66 @@
       "source": "crunchbase_odm"
     },
     "signal_5_ai_maturity": {
-      "score": 3,
+      "score": 0,
       "justifications": [
         {
           "signal": "ai_adjacent_open_roles",
-          "status": "3 of 8 roles are engineering/ML",
+          "status": "No public job feed found \u2014 not scored",
           "weight": "high",
-          "confidence": "high"
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "named_ai_ml_leadership",
-          "status": "Head of AI or ML leadership identified on LinkedIn",
+          "status": "No AI/ML leadership title in the ODM people list (list may be incomplete)",
           "weight": "high",
-          "confidence": "medium",
-          "source_url": "https://linkedin.com/company/novapay-technologies/people"
-        },
-        {
-          "signal": "modern_data_ml_stack",
-          "status": "Standard SaaS stack detected without distinct ML infrastructure",
-          "weight": "medium",
-          "confidence": "medium"
+          "confidence": "low",
+          "checked": true,
+          "source": "crunchbase_odm_people"
         },
         {
           "signal": "github_org_activity",
-          "status": "Active open source ML or data tool repositories found",
+          "status": "No public GitHub org found under expected names \u2014 not scored (private orgs are invisible)",
           "weight": "medium",
-          "confidence": "medium",
-          "source_url": "https://github.com/novapay-technologies"
+          "confidence": "low",
+          "checked": false
+        },
+        {
+          "signal": "modern_data_ml_stack",
+          "status": "Not checked \u2014 requires a BuiltWith/Wappalyzer integration; no value assumed",
+          "weight": "low",
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "executive_commentary",
-          "status": "No clear executive thought leadership on AI initiatives",
+          "status": "Not checked \u2014 requires a news/podcast search integration; no value assumed",
           "weight": "low",
-          "confidence": "high"
+          "confidence": "low",
+          "checked": false
         },
         {
           "signal": "strategic_communications",
-          "status": "PR mostly focused on product launches, not technical innovation",
+          "status": "Not checked \u2014 requires a press/filings search integration; no value assumed",
           "weight": "low",
-          "confidence": "medium"
+          "confidence": "low",
+          "checked": false
         }
       ],
-      "confidence": "medium",
-      "score_rationale": "Score 3/3 based on 6 signals. High-weight signals observed: ai_adjacent_open_roles, named_ai_ml_leadership, modern_data_ml_stack. Signal confidence: medium. Note: 5 of 6 signals are inferred from public proxies; absence of a signal is NOT proof of absence of capability."
+      "confidence": "low",
+      "dimensions_checked": 1,
+      "score_rationale": "Score 0/3 from 1 verified dimension(s): named_ai_ml_leadership. 5 dimension(s) not checked (no public source) and contribute nothing. Absence of a public signal is NOT proof of absence of capability."
     },
     "signal_6_icp_segment": {
-      "segment": "segment_4_specialized_capability",
-      "segment_number": 4,
-      "label": "Segment 4 \u2014 Specialized Capability Gap",
-      "pitch_language": "project-based consulting for ML platform build, agentic systems, or data-contracts architecture",
-      "confidence": 0.7,
-      "rationale": "AI maturity score 3/3 clears Segment 4 gate (\u22652 required). Pitch specialized capability, not headcount.",
+      "segment": "abstain",
+      "segment_number": 0,
+      "label": "Abstain \u2014 generic exploratory email only",
+      "pitch_language": "generic exploratory inquiry \u2014 no segment-specific pitch",
+      "confidence": 0.0,
+      "rationale": "No qualifying signal for any segment",
       "conflict_flag": false,
       "conflict_note": "",
-      "all_matched_segments": [
-        "segment_4_specialized_capability"
-      ]
+      "all_matched_segments": []
     }
   }
 }

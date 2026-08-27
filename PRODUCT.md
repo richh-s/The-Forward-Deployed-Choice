@@ -354,17 +354,19 @@ set.
   implementing `POST {email, name, company, title, phone} → {"signals":
   {...}, "icp_segment": 1-4}` (https to a public host; http://localhost in
   dev). The Week-10 challenge pipeline ships serving exactly that shape
-  (`ENRICHMENT_API_KEY=<key> uvicorn enrichment.service:app --port 8100` —
-  Crunchbase ODM sample + layoffs.fyi + job-post velocity + AI-maturity
-  scoring + ICP classification + the **competitor gap brief**), but note:
-  **several of its sub-signals are deterministic proxies, not live
-  lookups**. It therefore declares `"synthetic": true` in its responses,
-  and the engine hard-gates that: synthetic-flagged signals always compose
-  in inquiry mode (never assertion), and the research-finding opener is
-  suppressed. For assertion-mode outreach, connect a real provider
-  (Clay/Apollo-style wrapper or an internal service) that returns verified
-  signals without the flag. CSV rows with a `signals` column and the
-  per-prospect signals editor keep working as manual sources.
+  (`ENRICHMENT_API_KEY=<key> uvicorn enrichment.service:app --port 8100`).
+  Signals come from **real public sources only**: Crunchbase ODM
+  firmographics/people, layoffs.fyi, live job-post counts from public
+  Greenhouse/Lever/Ashby board APIs (citable URLs), and public GitHub org
+  activity. Dimensions with no integrated source (tech stack, executive
+  commentary) report **"not checked"** and contribute nothing — nothing is
+  ever invented, and a missing feed is an honest miss, not a fabricated
+  count. The response's `"synthetic"` flag is a computed tripwire: it is
+  False on this path, and if any mock/proxy value ever reappears the
+  engine hard-gates those signals into inquiry mode. Set
+  `ENRICHMENT_LIVE_LOOKUPS=false` to run without network calls (tests do).
+  CSV rows with a `signals` column and the per-prospect signals editor
+  keep working as manual sources.
 - **Market-space map** (stretch deliverable): `scripts/build_market_space.py`
   clusters the full ODM sample into sector × size × AI-readiness cells scored
   for bench match — outputs `market_space.csv` / `top_cells.md`, with proxy

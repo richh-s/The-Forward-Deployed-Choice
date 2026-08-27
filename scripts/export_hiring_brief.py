@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from enrichment.live_sources import has_fabricated_sources
 from enrichment.pipeline import enrich_company, generate_competitor_gap_brief
 
 COMPANY = "NovaPay Technologies"
@@ -36,7 +37,7 @@ brief = {
     "company": COMPANY,
     "crunchbase_id": result.get("crunchbase_id", ""),
     "last_enriched_at": datetime.now(UTC).isoformat(),
-    "synthetic": True,  # proxy-derived sub-signals — never assertion-grade
+    "synthetic": has_fabricated_sources(signals),  # tripwire: True only if any mock/proxy value slipped in
     "firmographics": result.get("firmographics", {}),
     "signals": signals,
 }
