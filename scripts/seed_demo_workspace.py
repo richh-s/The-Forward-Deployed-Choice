@@ -41,6 +41,13 @@ def build_playbook() -> dict:
         f"deploy in {info.get('time_to_deploy_days', '?')} days"
         for stack, info in (bench.get("stacks") or {}).items()
     ]
+    # Tone examples: the three Tenacious email sequences (cold / warm /
+    # re-engagement) — the composer treats them as style references.
+    sequences = []
+    seq_dir = SEED / "email_sequences"
+    if seq_dir.is_dir():
+        for path in sorted(seq_dir.glob("*.md")):
+            sequences.append(f"## {path.stem}\n{path.read_text()[:900]}")
     return {
         "company_name": "Tenacious Consulting and Outsourcing",
         "company_description": (
@@ -56,6 +63,8 @@ def build_playbook() -> dict:
         "capacity_notes": "\n".join(capacity_lines)
         + ("\n" + bench.get("honesty_constraint", "") if bench else ""),
         "pricing_notes": _read("pricing_sheet.md", 1500),
+        "case_studies": _read("case_studies.md", 3000),
+        "examples": "\n\n".join(sequences)[:2800],
         "sign_off": "Alex Chen, Senior Engagement Manager, Tenacious Consulting",
         "support_contact": "hello@tenacious.dev",
     }

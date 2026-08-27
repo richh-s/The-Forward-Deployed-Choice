@@ -44,7 +44,15 @@ def validate_credential_payload(provider: str, payload: dict) -> dict:
     }
     for url_field in ("base_url", "url", "webhook_url"):
         value = cleaned.get(url_field, "")
-        if value and not value.startswith("https://"):
+        if not value:
+            continue
+        # https everywhere; plain http tolerated only for loopback (the
+        # local enrichment service in development) — never for arbitrary
+        # hosts, which would reopen SSRF via tenant config.
+        is_loopback_http = value.startswith(
+            ("http://localhost", "http://127.0.0.1")
+        )
+        if not value.startswith("https://") and not is_loopback_http:
             raise CredentialValidationError(
                 f"{url_field} must be an https:// URL"
             )

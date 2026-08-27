@@ -2,7 +2,6 @@ import httpx
 import csv
 import json
 from datetime import datetime, timedelta
-from playwright.sync_api import sync_playwright
 from enrichment.icp_classifier import classify_icp_segment
 
 CRUNCHBASE_ODM_PATH = "data/crunchbase_odm_sample.json"
@@ -178,6 +177,11 @@ def get_job_post_velocity(company_name: str) -> dict:
     # difference between current count and a stored baseline in data/velocity_cache.json
     # if present, otherwise reported as "unknown" (point estimate only).
     try:
+        # Imported lazily: playwright lives in requirements-research.txt;
+        # without it the velocity signal degrades to the low-confidence
+        # fallback below instead of making the whole pipeline unimportable.
+        from playwright.sync_api import sync_playwright
+
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()

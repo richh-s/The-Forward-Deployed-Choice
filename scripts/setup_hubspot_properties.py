@@ -18,6 +18,7 @@ HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json
 BASE = "https://api.hubapi.com"
 
 PROPERTIES = [
+    ("crunchbase_id",               "Crunchbase Record ID",         "UUID of the Crunchbase ODM record this lead references"),
     ("enrichment_timestamp",        "Enrichment Timestamp",         "ISO 8601 UTC timestamp of last pipeline enrichment"),
     ("signal_source",               "Signal Source",                "Which pipeline wrote this contact"),
     ("enrichment_pipeline_version", "Enrichment Pipeline Version",  "Tenacious enrichment pipeline version tag"),

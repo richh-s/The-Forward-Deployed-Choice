@@ -517,6 +517,8 @@ async def update_playbook(
     style_guide: str = Form(""),
     capacity_notes: str = Form(""),
     pricing_notes: str = Form(""),
+    case_studies: str = Form(""),
+    examples: str = Form(""),
     sign_off: str = Form(""),
     support_contact: str = Form(""),
     honesty_constraints: str = Form(""),
@@ -532,6 +534,8 @@ async def update_playbook(
         "style_guide": style_guide.strip(),
         "capacity_notes": capacity_notes.strip(),
         "pricing_notes": pricing_notes.strip(),
+        "case_studies": case_studies.strip(),
+        "examples": examples.strip(),
         "sign_off": sign_off.strip(),
         "support_contact": support_contact.strip(),
     }

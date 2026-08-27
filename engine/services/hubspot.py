@@ -13,7 +13,7 @@ from tenacity import (
     wait_random_exponential,
 )
 
-from engine.models import Prospect, Workspace
+from engine.models import Message, Prospect, Workspace, as_aware, utcnow
 from engine.services.credentials import get_credentials
 from engine.services.http import get_client
 
@@ -58,6 +58,30 @@ def _contact_properties(prospect: Prospect) -> dict:
     }
 
 
+def _enrichment_properties(prospect: Prospect) -> dict:
+    """Tenacious custom properties (scripts/setup_hubspot_properties.py
+    creates them in the portal). Challenge requirement: every lead object in
+    HubSpot references its Crunchbase record and carries the enrichment
+    provenance."""
+    signals = prospect.signals or {}
+    funding = signals.get("signal_1_funding_event") or {}
+    maturity = signals.get("signal_5_ai_maturity") or {}
+    props: dict = {"signal_source": "conversion-engine"}
+    if funding.get("crunchbase_id"):
+        props["crunchbase_id"] = str(funding["crunchbase_id"])
+    if funding.get("amount_usd"):
+        props["funding_amount_usd"] = str(funding["amount_usd"])
+    if prospect.icp_segment:
+        props["icp_segment"] = str(prospect.icp_segment)
+    if maturity.get("score") is not None:
+        props["ai_maturity_score"] = str(maturity["score"])
+    if maturity.get("confidence"):
+        props["signal_confidence"] = str(maturity["confidence"])
+    if signals:
+        props["enrichment_timestamp"] = utcnow().isoformat()
+    return props
+
+
 async def sync_contact(
     db: AsyncSession, workspace: Workspace, prospect: Prospect
 ) -> str | None:
@@ -68,12 +92,22 @@ async def sync_contact(
     if not token:
         return None
 
+    properties = {**_contact_properties(prospect), **_enrichment_properties(prospect)}
     resp = await _request(
-        token,
-        "POST",
-        "/crm/v3/objects/contacts",
-        {"properties": _contact_properties(prospect)},
+        token, "POST", "/crm/v3/objects/contacts", {"properties": properties}
     )
+    if resp.status_code == 400 and "PROPERTY" in resp.text.upper():
+        # Portal without the Tenacious custom properties (setup script not
+        # run yet) — degrade to the standard fields rather than losing the
+        # contact.
+        logger.warning(
+            "HubSpot portal lacks custom enrichment properties; syncing "
+            "standard fields only (run scripts/setup_hubspot_properties.py)"
+        )
+        resp = await _request(
+            token, "POST", "/crm/v3/objects/contacts",
+            {"properties": _contact_properties(prospect)},
+        )
     if resp.status_code == 409:
         # Contact exists — the conflict message carries "Existing ID: <id>"
         detail = resp.json().get("message", "")
@@ -108,6 +142,56 @@ async def sync_contact(
     prospect.hubspot_contact_id = str(contact_id)
     await db.flush()
     return str(contact_id)
+
+
+# HubSpot v3 association type: note → contact.
+_NOTE_TO_CONTACT = 202
+
+
+async def log_conversation_event(
+    db: AsyncSession, workspace: Workspace, prospect: Prospect, message: Message
+) -> None:
+    """Log one conversation event (any channel, either direction) as a Note
+    on the contact's HubSpot timeline — the challenge requires every
+    conversation event in the CRM, not just contact creation and booking."""
+    creds = await get_credentials(db, workspace.id, "hubspot")
+    token = (creds or {}).get("access_token")
+    if not token:
+        return
+    contact_id = prospect.hubspot_contact_id or await sync_contact(
+        db, workspace, prospect
+    )
+    if not contact_id:
+        return
+    direction = "→ outbound" if message.direction == "out" else "← inbound"
+    body_lines = [
+        f"[{message.channel}] {direction}",
+        f"Subject: {message.subject}" if message.subject else "",
+        (message.body or "")[:4000],
+    ]
+    ts = as_aware(message.created_at) or utcnow()
+    resp = await _request(
+        token,
+        "POST",
+        "/crm/v3/objects/notes",
+        {
+            "properties": {
+                "hs_note_body": "\n".join(line for line in body_lines if line),
+                "hs_timestamp": str(int(ts.timestamp() * 1000)),
+            },
+            "associations": [{
+                "to": {"id": contact_id},
+                "types": [{
+                    "associationCategory": "HUBSPOT_DEFINED",
+                    "associationTypeId": _NOTE_TO_CONTACT,
+                }],
+            }],
+        },
+    )
+    resp.raise_for_status()
+    logger.info(
+        "HubSpot note logged | contact=%s message=%s", contact_id, message.id
+    )
 
 
 async def mark_meeting_booked(

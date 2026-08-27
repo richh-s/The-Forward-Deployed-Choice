@@ -85,6 +85,11 @@
     <textarea name="capacity_notes">{{ workspace.playbook.get('capacity_notes', '') }}</textarea>
     <label>Public pricing notes</label>
     <textarea name="pricing_notes">{{ workspace.playbook.get('pricing_notes', '') }}</textarea>
+    <label>Case studies (quotable outcomes — the composer may cite these and
+      nothing else)</label>
+    <textarea name="case_studies">{{ workspace.playbook.get('case_studies', '') }}</textarea>
+    <label>Example outreach (tone references for the composer)</label>
+    <textarea name="examples">{{ workspace.playbook.get('examples', '') }}</textarea>
     <div class="grid cols-2">
       <div><label>Support contact (shown in SMS HELP replies)</label>
         <input name="support_contact" value="{{ workspace.playbook.get('support_contact', '') }}"></div>

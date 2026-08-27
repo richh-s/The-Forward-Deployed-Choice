@@ -112,6 +112,12 @@ credentials (encrypted at rest), suppression list, campaigns, and users.
   booking, advances the prospect to `booked`, and queues the HubSpot update.
   Confirmed bookings starting within 24h get an **SMS reminder** (no-show
   reduction) — transactional, one per booking, suppression always honored.
+- **HubSpot** carries full lead provenance (Crunchbase record id, ICP
+  segment, AI-maturity score, funding amount, signal confidence, enrichment
+  timestamp — custom properties created by
+  `scripts/setup_hubspot_properties.py`, with graceful fallback to standard
+  fields on portals without them), and **every conversation event** on any
+  channel is logged as a Note on the contact timeline.
 
 ### The learning loop
 
@@ -314,14 +320,24 @@ set.
 
 ## 7. Extension points
 
-- **Live enrichment** (wired): `Prospect.signals` is the contract — a JSON
-  object of named signals with `confidence` (high/medium/low). Point the
-  workspace `enrichment` credential at any https endpoint implementing
-  `POST {email, name, company, title, phone} → {"signals": {...}}` and the
-  scheduler enriches `new` prospects before composing them. To use the
-  research `enrichment/` pipeline, expose `enrich_company()` behind such an
-  endpoint. CSV rows with a `signals` column and the per-prospect signals
-  editor keep working as manual sources.
+- **Live enrichment** (wired, challenge pipeline included): `Prospect.signals`
+  is the contract — a JSON object of named signals with `confidence`. Point
+  the workspace `enrichment` credential at any endpoint implementing
+  `POST {email, name, company, title, phone} → {"signals": {...},
+  "icp_segment": 1-4}` (https, or http://localhost in dev). The Week-10
+  pipeline ships ready to serve in exactly that shape:
+  `ENRICHMENT_API_KEY=<key> uvicorn enrichment.service:app --port 8100` —
+  Crunchbase ODM (full 1,000-record sample via
+  `scripts/fetch_crunchbase_odm.py`) + layoffs.fyi + job-post velocity +
+  AI-maturity scoring + ICP segment classification + the **competitor gap
+  brief**, which the composer uses to lead outreach with a research finding
+  (confidence-gated: low-confidence gaps are never mentioned to a prospect).
+  CSV rows with a `signals` column and the per-prospect signals editor keep
+  working as manual sources.
+- **Market-space map** (stretch deliverable): `scripts/build_market_space.py`
+  clusters the full ODM sample into sector × size × AI-readiness cells scored
+  for bench match — outputs `market_space.csv` / `top_cells.md`, with proxy
+  limitations documented in `market_space_methodology.md`.
 - **WhatsApp cold outbound**: the conversational WhatsApp channel is live
   (inbound + replies via Twilio); adding template-based cold touches means
   registering Meta-approved templates and a `whatsapp` campaign channel —

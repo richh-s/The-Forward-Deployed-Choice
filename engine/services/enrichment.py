@@ -10,7 +10,11 @@ service, or the research `enrichment/` pipeline exposed behind FastAPI.
 Contract:
     POST <url>          (Authorization: Bearer <api_key> when configured)
     body: {"email", "name", "company", "title", "phone"}
-    200 → {"signals": {...}}  or a bare signals object {...}
+    200 → {"signals": {...}, "icp_segment": 1-4 (optional)}
+          or a bare signals object {...}
+
+The challenge pipeline is served in exactly this shape by
+`uvicorn enrichment.service:app` — see enrichment/service.py.
 
 Failure policy: transport/5xx errors retry via the job queue; on the final
 attempt the prospect proceeds UNENRICHED (stage 'enriched', empty signals —
@@ -36,8 +40,10 @@ async def enrichment_configured(db: AsyncSession, workspace_id: str) -> bool:
 async def fetch_signals(
     db: AsyncSession, workspace: Workspace, prospect: Prospect
 ) -> dict:
-    """Call the workspace's enrichment endpoint for one prospect.
-    Raises on transport/HTTP errors (the job queue handles retries)."""
+    """Call the workspace's enrichment endpoint for one prospect. Returns the
+    response body (a dict with "signals" and optionally "icp_segment", or a
+    bare signals object). Raises on transport/HTTP errors (the job queue
+    handles retries)."""
     creds = await get_credentials(db, workspace.id, "enrichment")
     if not creds or not creds.get("url"):
         return {}
@@ -57,12 +63,11 @@ async def fetch_signals(
     )
     resp.raise_for_status()
     body = resp.json()
-    signals = body.get("signals", body) if isinstance(body, dict) else None
-    if not isinstance(signals, dict):
+    if not isinstance(body, dict):
         raise ValueError(
             f"Enrichment endpoint returned no signals object: {str(body)[:200]}"
         )
-    return signals
+    return body
 
 
 async def enrich_prospect(
@@ -72,9 +77,9 @@ async def enrich_prospect(
     *,
     final_attempt: bool,
 ) -> None:
-    """Populate prospect.signals and advance to 'enriched'."""
+    """Populate prospect.signals (and ICP segment) and advance to 'enriched'."""
     try:
-        signals = await fetch_signals(db, workspace, prospect)
+        body = await fetch_signals(db, workspace, prospect)
     except (httpx.HTTPError, ValueError):
         if not final_attempt:
             raise
@@ -84,8 +89,12 @@ async def enrich_prospect(
             "Enrichment failed for prospect %s after retries; "
             "proceeding unenriched", prospect.id,
         )
-        signals = {}
-    if signals:
+        body = {}
+    signals = body.get("signals", body)
+    if isinstance(signals, dict) and signals:
         prospect.signals = signals
+    segment = body.get("icp_segment")
+    if isinstance(segment, int) and 1 <= segment <= 4:
+        prospect.icp_segment = segment
     if prospect.stage == "new":
         prospect.stage = "enriched"

@@ -221,6 +221,20 @@ async def handle_send_draft(db: AsyncSession, job: Job) -> None:
     draft.status = "sent"
     draft.sent_message_id = message.id
 
+    # Every conversation event lands on the CRM timeline (challenge
+    # requirement) — the handler no-ops when HubSpot isn't configured.
+    await enqueue(
+        db,
+        "hubspot_log_event",
+        {
+            "workspace_id": workspace.id,
+            "prospect_id": prospect.id,
+            "message_id": message.id,
+        },
+        workspace_id=workspace.id,
+        idempotency_key=f"hs_note:{message.id}",
+    )
+
     if draft.kind == "reply":
         # A reply is not an outreach touch: it never advances the sequence,
         # touch count, or stage (intent handling already did that inbound).
@@ -266,11 +280,23 @@ async def handle_inbound_message(db: AsyncSession, job: Job) -> None:
     )
     intent = result["intent"]
 
-    # Record the classification on the inbound message row.
+    # Record the classification on the inbound message row, and log the
+    # inbound event to the CRM timeline.
     if p.get("message_id"):
         inbound = await db.get(Message, p["message_id"])
         if inbound is not None:
             inbound.intent = intent
+        await enqueue(
+            db,
+            "hubspot_log_event",
+            {
+                "workspace_id": workspace.id,
+                "prospect_id": prospect.id,
+                "message_id": p["message_id"],
+            },
+            workspace_id=workspace.id,
+            idempotency_key=f"hs_note:{p['message_id']}",
+        )
 
     if intent == "cold":
         await suppress(db, workspace.id, "email", prospect.email, "opt_out")
@@ -462,6 +488,15 @@ async def handle_weekly_digest(db: AsyncSession, job: Job) -> None:
 async def handle_sync_hubspot(db: AsyncSession, job: Job) -> None:
     workspace, prospect = await _load_scoped(db, job.payload)
     await hubspot_svc.sync_contact(db, workspace, prospect)
+
+
+@job_handler("hubspot_log_event")
+async def handle_hubspot_log_event(db: AsyncSession, job: Job) -> None:
+    workspace, prospect = await _load_scoped(db, job.payload)
+    message = await db.get(Message, job.payload["message_id"])
+    if message is None or message.workspace_id != workspace.id:
+        return  # message purged or mismatched — nothing to log
+    await hubspot_svc.log_conversation_event(db, workspace, prospect, message)
 
 
 @job_handler("hubspot_mark_booked")
