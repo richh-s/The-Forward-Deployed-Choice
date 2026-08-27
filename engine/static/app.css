@@ -224,6 +224,19 @@ form.inline { display: inline; }
 .funnel-bar { height: 26px; background: var(--red); border-radius: 6px; min-width: 3px; display: flex; align-items: center; padding: 0 8px; color: #fff; font-size: 12px; font-weight: 600; }
 .funnel-bar.dim { background: var(--red-ring); color: var(--red-dark); }
 
+/* password field with visibility toggle (double class beats the
+   full-width `.auth-card button` rule) */
+.pw-wrap { position: relative; }
+.pw-wrap input { padding-right: 42px; }
+.pw-wrap .pw-toggle.pw-toggle {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  background: transparent; border: none; color: var(--muted);
+  padding: 6px; margin: 0; width: auto; cursor: pointer; display: inline-flex;
+}
+.pw-wrap .pw-toggle.pw-toggle:hover {
+  background: transparent; border: none; color: var(--ink);
+}
+
 /* ── auth screens ────────────────────────────────────────────────── */
 .auth-shell { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
   background: radial-gradient(1200px 500px at 50% -10%, #fff 0%, var(--bg) 60%); }
