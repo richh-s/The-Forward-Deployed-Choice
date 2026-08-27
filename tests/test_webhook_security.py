@@ -116,6 +116,9 @@ async def test_sms_rejected_with_wrong_token(client: httpx.AsyncClient):
     assert resp.status_code == 401
 
 
-async def test_unknown_workspace_404(client: httpx.AsyncClient):
+async def test_unknown_workspace_ignored_with_200(client: httpx.AsyncClient):
+    # 200, not 404: providers retry non-2xx forever for a workspace that
+    # will never exist again.
     resp = await client.post("/webhooks/nope/calcom", content=b"{}")
-    assert resp.status_code == 404
+    assert resp.status_code == 200
+    assert resp.json().get("ignored") == "unknown workspace"

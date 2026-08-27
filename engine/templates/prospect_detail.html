@@ -22,8 +22,21 @@
         </select>
         <button class="secondary">Set stage</button>
       </form>
+      {% if user.role == 'admin' %}
+      <form class="inline" method="post" action="/prospects/{{ prospect.id }}/delete"
+            onsubmit="return confirm('Erase this prospect\'s personal data (messages, drafts, bookings)? Their address stays on the do-not-contact list. This cannot be undone.')">{{ csrf_field(request) }}
+        <button class="danger secondary" style="color:var(--bad)"
+                title="GDPR/CCPA erasure — removes their data, keeps the opt-out">Erase data</button>
+      </form>
+      {% endif %}
     </span>
   </div>
+  {% if prospect.signals and prospect.signals.get('_enrichment_failed') %}
+  <div class="banner warn" style="margin-top:10px">Enrichment failed for this
+    prospect after all retries — it proceeded without signals (inquiry mode).
+    Fix the enrichment source and use “Compose draft now”, or paste signals
+    below.</div>
+  {% endif %}
   <div class="muted" style="margin-top:8px">
     Touches: {{ prospect.touch_count }}
     {% if prospect.avg_confidence is not none %} · signal confidence {{ '%.2f' | format(prospect.avg_confidence) }}{% endif %}
@@ -76,9 +89,15 @@
         <tr>
           <td>#{{ d.touch_number }}</td>
           <td>{{ '%.2f' | format(d.judge_score) if d.judge_score is not none else '—' }}</td>
-          <td><span class="badge muted">{{ d.status }}</span></td>
+          <td><span class="badge {{ 'bad' if d.status in ('rejected', 'failed') else 'muted' }}">{{ d.status }}</span></td>
           <td class="muted">{{ d.created_at.strftime('%m-%d %H:%M') }}</td>
         </tr>
+        {% if d.reject_reason or d.judge_feedback %}
+        <tr><td colspan="4" class="muted" style="font-size:12px">
+          {% if d.reject_reason %}Reason: {{ d.reject_reason }}{% endif %}
+          {% if d.judge_feedback %}{{ ' · ' if d.reject_reason }}Judge: {{ d.judge_feedback[:300] }}{% endif %}
+        </td></tr>
+        {% endif %}
         {% endfor %}
       </table>
       {% else %}<p class="muted">No drafts.</p>{% endif %}

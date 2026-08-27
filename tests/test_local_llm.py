@@ -119,7 +119,11 @@ async def test_corrective_retry_on_missing_keys():
 async def test_persistent_bad_output_raises():
     bad = _resp(200, _chat_body("still not json"))
     with patch("engine.services.llm._local_chat", new=AsyncMock(return_value=bad)):
-        with pytest.raises(RuntimeError, match="missing required keys|Local model"):
+        # Permanent: two identical failures mean a third identical (billed)
+        # call will fail too — the job must dead-letter, not retry 5×.
+        with pytest.raises(
+            llm.LLMPermanentError, match="missing required keys|Local model"
+        ):
             await llm.complete(
                 None, "ws1", model="local:m", system="s",
                 messages=[{"role": "user", "content": "u"}], json_schema=SCHEMA,

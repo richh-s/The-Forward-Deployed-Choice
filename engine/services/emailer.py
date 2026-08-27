@@ -133,6 +133,7 @@ async def send_email(
     body: str,
     compose_cost_usd: float = 0.0,
     idempotency_key: str | None = None,
+    is_reply: bool = False,
 ) -> Message:
     """Policy-checked, suppressed-aware, sink-gated email send.
     Raises SendBlocked (policy) or httpx errors (transport, after retries)."""
@@ -143,7 +144,9 @@ async def send_email(
     if not workspace.from_email:
         raise SendBlocked("Workspace sending address (from_email) is not configured")
 
-    await check_can_send(db, workspace, "email", prospect.email, prospect)
+    await check_can_send(
+        db, workspace, "email", prospect.email, prospect, is_reply=is_reply
+    )
 
     to_address = prospect.email
     headers = {}

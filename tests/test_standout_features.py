@@ -199,11 +199,17 @@ async def test_killswitch_pause_notifies_slack():
             body="expensive", status="rejected", compose_cost_usd=5.0,
         ))
         await db.flush()
-        with patch("engine.services.slack.get_client", return_value=FakeClient()):
-            from engine.services.killswitch import evaluate_killswitch
+        from engine.services.killswitch import evaluate_killswitch
 
-            breaches = await evaluate_killswitch(db, ws)
+        breaches = await evaluate_killswitch(db, ws)
     assert breaches
+    # The ping is enqueued atomically with the pause and delivered by the
+    # worker — drain the queue to fire it.
+    from engine.queue import process_one
+
+    with patch("engine.services.slack.get_client", return_value=FakeClient()):
+        while await process_one():
+            pass
     assert posts and "Kill-switch" in posts[0][1]["json"]["text"]
 
 

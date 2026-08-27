@@ -16,6 +16,7 @@ from tenacity import (
 
 from engine.config import get_settings
 from engine.models import Message, Prospect, Workspace
+from engine.queue import PermanentJobError
 from engine.services.credentials import get_credentials
 from engine.services.http import get_client
 from engine.services.suppression import (
@@ -67,6 +68,7 @@ async def send_sms(
     to_phone: str,
     body: str,
     skip_policy_checks: bool = False,
+    is_reply: bool = False,
 ) -> Message:
     """Policy-checked, sink-gated SMS send.
 
@@ -83,7 +85,9 @@ async def send_sms(
     to_phone = normalize_phone(to_phone)
     intended_recipient = to_phone
     if not skip_policy_checks:
-        await check_can_send(db, workspace, "sms", to_phone, prospect)
+        await check_can_send(
+            db, workspace, "sms", to_phone, prospect, is_reply=is_reply
+        )
 
     if not settings.live_mode:
         if not settings.sink_phone:
@@ -110,7 +114,10 @@ async def send_sms(
     provider_id = recipients[0].get("messageId") if recipients else None
     status = recipients[0].get("status", "unknown") if recipients else "unknown"
     if status not in ("Success", "Sent"):
-        raise RuntimeError(f"Africa's Talking rejected the SMS: {result}")
+        # The API accepted the request but rejected this recipient (invalid
+        # number, blacklist, no credit) — retrying re-bills the same call for
+        # the same deterministic answer.
+        raise PermanentJobError(f"Africa's Talking rejected the SMS: {result}")
 
     message = Message(
         workspace_id=workspace.id,

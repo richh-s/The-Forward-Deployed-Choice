@@ -19,13 +19,29 @@ logger = logging.getLogger(__name__)
 
 
 async def _first_outbound_at(db: AsyncSession, workspace_id: str):
-    return (await db.execute(
+    """Warm-up epoch: the workspace's first outbound email, OR the moment
+    the sending address last changed — a brand-new domain must not inherit
+    the old domain's fully-ramped cap."""
+    from engine.models import AuditLog
+
+    first = (await db.execute(
         select(func.min(Message.created_at)).where(
             Message.workspace_id == workspace_id,
             Message.channel == "email",
             Message.direction == "out",
         )
     )).scalar_one()
+    if first is None:
+        return None
+    last_change = (await db.execute(
+        select(func.max(AuditLog.created_at)).where(
+            AuditLog.workspace_id == workspace_id,
+            AuditLog.action == "workspace_updated",
+        )
+    )).scalar_one()
+    if last_change is not None and as_aware(last_change) > as_aware(first):
+        return last_change
+    return first
 
 
 async def warmup_email_cap(db: AsyncSession, workspace: Workspace) -> int:

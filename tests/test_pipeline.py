@@ -178,7 +178,10 @@ async def test_manual_approval_flow(client: httpx.AsyncClient):
     with patch(
         "engine.services.emailer._resend_send", new=AsyncMock(side_effect=fake_resend)
     ):
-        assert await process_one()  # the send job
+        # Drain the queue: a slack_notify job (draft-awaits-review ping) may
+        # sit ahead of the send job.
+        while await process_one():
+            pass
     async with db_session() as db:
         draft = await db.get(Draft, draft_id)
         assert draft.status == "sent" and draft.reviewed_by == seed["user_id"]

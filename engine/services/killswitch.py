@@ -25,9 +25,12 @@ from engine.models import (
 logger = logging.getLogger(__name__)
 
 
-async def compute_metrics(db: AsyncSession, workspace: Workspace) -> dict:
+async def compute_metrics(
+    db: AsyncSession, workspace: Workspace, *, since=None
+) -> dict:
     settings = get_settings()
-    since = utcnow() - timedelta(days=settings.killswitch_window_days)
+    window_start = utcnow() - timedelta(days=settings.killswitch_window_days)
+    since = max(since, window_start) if since is not None else window_start
 
     async def _count(*conds) -> int:
         row = await db.execute(
@@ -119,7 +122,20 @@ MIN_SENDS_FOR_RATES = 20
 
 async def evaluate_killswitch(db: AsyncSession, workspace: Workspace) -> list[str]:
     """Check thresholds; pause the workspace on breach. Returns breach list."""
-    metrics = await compute_metrics(db, workspace)
+    if workspace.outbound_paused:
+        return []  # already paused — nothing to trip, nothing to re-notify
+    # Resume watermark: an admin resume means "I reviewed this breach". Only
+    # data since the last resume counts, otherwise the same rolling window
+    # re-trips the switch within 60 seconds and resume is impossible.
+    last_resume = (await db.execute(
+        select(func.max(AuditLog.created_at)).where(
+            AuditLog.workspace_id == workspace.id,
+            AuditLog.action == "outbound_resumed",
+        )
+    )).scalar_one()
+    from engine.models import as_aware
+
+    metrics = await compute_metrics(db, workspace, since=as_aware(last_resume))
     thresholds = _thresholds(workspace)
     breaches: list[str] = []
 
@@ -153,7 +169,7 @@ async def evaluate_killswitch(db: AsyncSession, workspace: Workspace) -> list[st
             f"${thresholds['max_llm_cost_usd']:.2f} over the window"
         )
 
-    if breaches and not workspace.outbound_paused:
+    if breaches:
         workspace.outbound_paused = True
         workspace.pause_reason = "Kill-switch: " + "; ".join(breaches)
         db.add(
@@ -166,9 +182,11 @@ async def evaluate_killswitch(db: AsyncSession, workspace: Workspace) -> list[st
         logger.warning(
             "KILL-SWITCH paused workspace %s: %s", workspace.id, breaches
         )
-        from engine.services import slack
+        # Enqueued, not sent inline: the ping commits atomically with the
+        # pause, so a rolled-back pause can't have already alerted Slack.
+        from engine.services.jobs import notify_slack
 
-        await slack.notify(
+        await notify_slack(
             db, workspace.id,
             f"⛔ Kill-switch paused outbound for *{workspace.name}*: "
             + "; ".join(breaches),

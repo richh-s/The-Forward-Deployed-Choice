@@ -117,6 +117,7 @@ class BodySizeLimitMiddleware:
             return
 
         received = 0
+        response_started = False
 
         async def counting_receive() -> Message:
             nonlocal received
@@ -127,10 +128,19 @@ class BodySizeLimitMiddleware:
                     raise _BodyTooLarge()
             return message
 
+        async def tracking_send(message: Message) -> None:
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
         try:
-            await self.app(scope, counting_receive, send)
+            await self.app(scope, counting_receive, tracking_send)
         except _BodyTooLarge:
-            await _reject_413(send)
+            # Only answer if the app hasn't already started a response —
+            # a second http.response.start is an ASGI protocol violation.
+            if not response_started:
+                await _reject_413(send)
 
 
 class _BodyTooLarge(Exception):

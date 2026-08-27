@@ -123,8 +123,13 @@ class LLMResult:
 
 # One long-lived client (and connection pool) per distinct API key, instead
 # of a new client per call — a per-call client leaks connections/FDs on a
-# long-lived worker. Bounded: evicting the oldest closes its pool.
-_anthropic_clients: dict[str, anthropic.AsyncAnthropic] = {}
+# long-lived worker. Bounded LRU: least-recently-used key is evicted; the
+# evicted client is NOT closed explicitly (a concurrent job may be
+# mid-request on its pool) — dropping the reference lets GC reclaim it once
+# in-flight requests finish.
+from collections import OrderedDict  # noqa: E402
+
+_anthropic_clients: OrderedDict[str, anthropic.AsyncAnthropic] = OrderedDict()
 _MAX_ANTHROPIC_CLIENTS = 32
 
 
@@ -140,20 +145,17 @@ async def _client_for_workspace(
             "ANTHROPIC_API_KEY)"
         )
     client = _anthropic_clients.get(api_key)
-    if client is None:
-        while len(_anthropic_clients) >= _MAX_ANTHROPIC_CLIENTS:
-            oldest_key = next(iter(_anthropic_clients))
-            oldest = _anthropic_clients.pop(oldest_key)
-            try:
-                await oldest.close()
-            except Exception:  # noqa: BLE001 — eviction is best-effort
-                pass
-        client = anthropic.AsyncAnthropic(
-            api_key=api_key,
-            timeout=settings.llm_timeout_seconds,
-            max_retries=settings.llm_max_retries,
-        )
-        _anthropic_clients[api_key] = client
+    if client is not None:
+        _anthropic_clients.move_to_end(api_key)
+        return client
+    while len(_anthropic_clients) >= _MAX_ANTHROPIC_CLIENTS:
+        _anthropic_clients.popitem(last=False)
+    client = anthropic.AsyncAnthropic(
+        api_key=api_key,
+        timeout=settings.llm_timeout_seconds,
+        max_retries=settings.llm_max_retries,
+    )
+    _anthropic_clients[api_key] = client
     return client
 
 
@@ -169,6 +171,11 @@ async def _complete_anthropic(
     json_schema: dict | None,
 ) -> LLMResult:
     client = await _client_for_workspace(db, workspace_id)
+    # The credential lookup above opened a fresh transaction on this session.
+    # Release it before the (potentially minutes-long) network call — job
+    # handlers commit before calling in precisely so no DB connection sits
+    # idle-in-transaction under the model call.
+    await db.commit()
     kwargs: dict = {
         "model": model,
         "max_tokens": max_tokens,
@@ -188,9 +195,10 @@ async def _complete_anthropic(
     # Deterministic outcomes: the same prompt will refuse/truncate again, so
     # these are permanent — the queue must not spend retries (and money) on them.
     if response.stop_reason == "refusal":
-        detail = ""
-        if getattr(response, "stop_details", None):
-            detail = f" ({response.stop_details.explanation})"
+        explanation = getattr(
+            getattr(response, "stop_details", None), "explanation", ""
+        )
+        detail = f" ({explanation})" if explanation else ""
         raise LLMPermanentError(f"Model declined the request{detail}")
     if response.stop_reason == "max_tokens":
         raise LLMPermanentError(
@@ -198,6 +206,29 @@ async def _complete_anthropic(
         )
 
     text = "".join(b.text for b in response.content if b.type == "text")
+    if json_schema is not None:
+        # complete() promises callers that .json() parses and carries the
+        # required keys — enforce it here too, not only on the local path.
+        if not text.strip():
+            raise LLMPermanentError(
+                f"Model returned no text content (stop_reason="
+                f"{response.stop_reason})"
+            )
+        try:
+            obj = json.loads(text)
+        except ValueError as exc:
+            raise LLMPermanentError(
+                f"Schema-constrained output did not parse as JSON: {text[:200]}"
+            ) from exc
+        if not isinstance(obj, dict):
+            raise LLMPermanentError(
+                f"Schema-constrained output is not a JSON object: {text[:200]}"
+            )
+        missing = _missing_keys(obj, json_schema)
+        if missing:
+            raise LLMPermanentError(
+                f"Schema-constrained output missing required keys: {missing}"
+            )
     return LLMResult(
         text=text,
         model=response.model,
@@ -225,9 +256,17 @@ async def _local_chat(base_url: str, api_key: str, payload: dict) -> httpx.Respo
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    return await _get_local_client().post(
+    resp = await _get_local_client().post(
         f"{base_url.rstrip('/')}/chat/completions", headers=headers, json=payload
     )
+    # Raise retryable statuses HERE, inside the retried function — the retry
+    # predicate only sees exceptions, so returning a 503 untouched would
+    # make the whole 429/5xx retry branch unreachable. Other 4xx (e.g. the
+    # 400 that signals response_format is unsupported) are returned for the
+    # caller to inspect.
+    if resp.status_code == 429 or resp.status_code >= 500:
+        resp.raise_for_status()
+    return resp
 
 
 # Reasoning models (e.g. gemma via Ollama) sometimes leak their internal
@@ -240,18 +279,24 @@ _FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
 
 def extract_json(text: str) -> dict:
     """Parse a JSON object from local-model output, tolerating code fences
-    and leading prose."""
+    and leading prose. Raises ValueError unless the result is a dict — a
+    bare `42` or a list would otherwise slip through and crash callers that
+    index into the result."""
     text = _CHANNEL_RE.sub("", text).strip()
     fenced = _FENCE_RE.match(text)
     if fenced:
         text = fenced.group(1)
     try:
-        return json.loads(text)
+        obj = json.loads(text)
     except ValueError:
         start, end = text.find("{"), text.rfind("}")
         if start != -1 and end > start:
-            return json.loads(text[start:end + 1])
-        raise
+            obj = json.loads(text[start:end + 1])
+        else:
+            raise
+    if not isinstance(obj, dict):
+        raise ValueError(f"Expected a JSON object, got {type(obj).__name__}")
+    return obj
 
 
 def _missing_keys(obj: dict, json_schema: dict) -> list[str]:
@@ -318,6 +363,13 @@ async def _complete_local(
         # Reasoning models sometimes leave content empty and put everything in
         # a separate reasoning field (esp. when truncated) — fall back to it.
         content = msg.get("content") or msg.get("reasoning") or ""
+        if not content and choices[0].get("finish_reason") == "length":
+            # Truncated with nothing usable — the same prompt truncates the
+            # same way on every retry.
+            raise LLMPermanentError(
+                "Local model output truncated at max_tokens with no content; "
+                "raise LOCAL_LLM_MIN_MAX_TOKENS"
+            )
         return content, b.get("usage") or {}
 
     text, usage = _parse(body)
@@ -349,11 +401,13 @@ async def _complete_local(
                 obj = extract_json(text)
                 missing = _missing_keys(obj, json_schema)
             except ValueError as exc:
-                raise RuntimeError(
+                # Two failures on the same prompt — a third identical call
+                # is billable determinism, not a retry strategy.
+                raise LLMPermanentError(
                     "Local model failed to produce parseable JSON after retry"
                 ) from exc
             if missing:
-                raise RuntimeError(
+                raise LLMPermanentError(
                     f"Local model output missing required keys after retry: {missing}"
                 )
         text = json.dumps(obj)
@@ -383,6 +437,11 @@ async def complete(
     """Run one model call. With json_schema, .json() is guaranteed to parse
     and contain the schema's required keys (both backends)."""
     if model.startswith(LOCAL_PREFIX):
+        # Callers may have read (e.g. conversation history) on this session —
+        # release the transaction before the slow local-model call. (db may
+        # be None in direct/offline use: the local path needs no DB.)
+        if db is not None:
+            await db.commit()
         return await _complete_local(
             model=model,
             system=system,

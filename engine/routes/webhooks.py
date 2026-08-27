@@ -35,12 +35,15 @@ router = APIRouter()
 OPT_OUT_COMMANDS = {"STOP", "UNSUB", "UNSUBSCRIBE", "QUIT", "CANCEL"}
 
 
-async def _workspace_by_slug(db: AsyncSession, slug: str) -> Workspace:
+async def _workspace_by_slug(db: AsyncSession, slug: str) -> Workspace | None:
+    """None for an unknown slug. Callers return 200-ignored rather than 404:
+    providers retry non-2xx, and a deleted workspace would otherwise produce
+    an indefinite retry stream that can never succeed."""
     row = await db.execute(select(Workspace).where(Workspace.slug == slug))
-    workspace = row.scalar_one_or_none()
-    if workspace is None:
-        raise HTTPException(status_code=404, detail="Unknown workspace")
-    return workspace
+    return row.scalar_one_or_none()
+
+
+_IGNORED = {"received": True, "ignored": "unknown workspace"}
 
 
 async def _claim_event(db: AsyncSession, provider: str, external_id: str) -> bool:
@@ -64,6 +67,18 @@ def _body_fingerprint(*parts: str) -> str:
     import hashlib
 
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:64]
+
+
+def _extract_email(value) -> str:
+    """Robust sender extraction: Resend may deliver `from` as a bare
+    address, a display-name form ("Jane Doe <jane@x.com>"), or an object —
+    an exact-match lookup on the raw string silently drops the reply."""
+    from email.utils import parseaddr
+
+    if isinstance(value, dict):
+        value = value.get("email") or value.get("address") or ""
+    addr = parseaddr(str(value or ""))[1]
+    return addr.lower().strip()
 
 
 async def _prospect_by_email(
@@ -91,6 +106,8 @@ async def resend_webhook(
     db: AsyncSession = Depends(get_db),
 ):
     workspace = await _workspace_by_slug(db, slug)
+    if workspace is None:
+        return _IGNORED
     payload = await request.body()
     creds = await get_credentials(db, workspace.id, "resend") or {}
     verify_svix(
@@ -101,8 +118,12 @@ async def resend_webhook(
         event = json.loads(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid JSON") from exc
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail="Invalid JSON")
     event_type = str(event.get("type", ""))
-    data = event.get("data", {}) or {}
+    data = event.get("data")
+    if not isinstance(data, dict):
+        data = {}
 
     external_id = svix_id or f"{event_type}:{data.get('email_id', '')}"
     if not await _claim_event(db, "resend", external_id):
@@ -129,12 +150,16 @@ async def resend_webhook(
                 message.status = status_map[event_type]
         if event_type in ("email.bounced", "email.complained"):
             reason = "bounce" if event_type == "email.bounced" else "complaint"
-            for addr in data.get("to") or []:
-                await suppress(db, workspace.id, "email", addr, reason)
+            to = data.get("to")
+            if isinstance(to, str):  # some payloads carry a bare string
+                to = [to]
+            for addr in to if isinstance(to, list) else []:
+                if isinstance(addr, str) and addr.strip():
+                    await suppress(db, workspace.id, "email", addr[:320], reason)
         return {"received": True}
 
     if event_type in ("email.received", "inbound_email"):
-        from_addr = str(data.get("from", "")).lower().strip()
+        from_addr = _extract_email(data.get("from"))
         text = str(data.get("text", "") or "")[:5000]
         prospect = await _prospect_by_email(db, workspace.id, from_addr)
         if prospect is None:
@@ -177,6 +202,8 @@ async def sms_webhook(
     db: AsyncSession = Depends(get_db),
 ):
     workspace = await _workspace_by_slug(db, slug)
+    if workspace is None:
+        return _IGNORED
     creds = await get_credentials(db, workspace.id, "africastalking") or {}
     verify_url_token(creds.get("webhook_token"), token)
 
@@ -292,6 +319,8 @@ async def whatsapp_webhook(
     from engine.services.whatsapp import send_whatsapp
 
     workspace = await _workspace_by_slug(db, slug)
+    if workspace is None:
+        return _IGNORED
     form = {k: str(v) for k, v in (await request.form()).items()}
     creds = await get_credentials(db, workspace.id, "twilio") or {}
     verify_twilio(
@@ -314,6 +343,17 @@ async def whatsapp_webhook(
     command = text.upper().strip()
     if command in OPT_OUT_COMMANDS:
         await suppress(db, workspace.id, "whatsapp", phone, "opt_out")
+        # Parity with the SMS STOP branch: a STOP anywhere halts the whole
+        # sequence, not just this channel — the stage gate in check_can_send
+        # blocks queued sends on every channel.
+        row = await db.execute(
+            select(Prospect).where(
+                Prospect.workspace_id == workspace.id, Prospect.phone == phone
+            )
+        )
+        for prospect in row.scalars().all():
+            prospect.stage = "opted_out"
+            prospect.next_followup_at = None
         try:
             await send_whatsapp(
                 db, workspace, None, to_phone=phone,
@@ -384,6 +424,8 @@ async def calcom_webhook(
     db: AsyncSession = Depends(get_db),
 ):
     workspace = await _workspace_by_slug(db, slug)
+    if workspace is None:
+        return _IGNORED
     payload = await request.body()
     creds = await get_credentials(db, workspace.id, "calcom") or {}
     verify_calcom(creds.get("webhook_secret"), x_cal_signature_256, payload)
@@ -392,15 +434,22 @@ async def calcom_webhook(
         event = json.loads(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid JSON") from exc
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail="Invalid JSON")
     trigger = str(event.get("triggerEvent", ""))
-    booking_payload = event.get("payload", {}) or {}
+    booking_payload = event.get("payload")
+    if not isinstance(booking_payload, dict):
+        booking_payload = {}
     uid = str(booking_payload.get("uid", ""))
 
     if not await _claim_event(db, "calcom", f"{trigger}:{uid}"):
         return {"received": True, "duplicate": True}
 
     booking = await record_booking_event(db, workspace, trigger, booking_payload)
-    if booking and booking.prospect_id and trigger == "BOOKING_CREATED":
+    # A reschedule must reach the CRM too — the meeting time changed.
+    if booking and booking.prospect_id and trigger in (
+        "BOOKING_CREATED", "BOOKING_RESCHEDULED"
+    ):
         await enqueue(
             db,
             "hubspot_mark_booked",
@@ -437,9 +486,31 @@ def _escape_xml(text: str) -> str:
     )
 
 
+_EMPTY_TWIML = Response(
+    content='<?xml version="1.0" encoding="UTF-8"?><Response/>',
+    media_type="application/xml",
+)
+
+
+async def _prospect_by_phone(
+    db: AsyncSession, workspace_id: str, raw_phone: str
+) -> Prospect | None:
+    phone = normalize_phone(raw_phone)
+    if not phone:
+        return None
+    row = await db.execute(
+        select(Prospect).where(
+            Prospect.workspace_id == workspace_id, Prospect.phone == phone
+        )
+    )
+    return row.scalars().first()
+
+
 @router.post("/webhooks/{slug}/voice")
 async def voice_twiml(slug: str, request: Request, db: AsyncSession = Depends(get_db)):
     workspace = await _workspace_by_slug(db, slug)
+    if workspace is None:
+        return _EMPTY_TWIML
     form = {k: str(v) for k, v in (await request.form()).items()}
     await _verify_twilio_request(db, workspace, request, form)
 
@@ -462,6 +533,8 @@ async def voice_twiml(slug: str, request: Request, db: AsyncSession = Depends(ge
 @router.post("/webhooks/{slug}/voice/gather")
 async def voice_gather(slug: str, request: Request, db: AsyncSession = Depends(get_db)):
     workspace = await _workspace_by_slug(db, slug)
+    if workspace is None:
+        return _EMPTY_TWIML
     form = {k: str(v) for k, v in (await request.form()).items()}
     await _verify_twilio_request(db, workspace, request, form)
 
@@ -473,10 +546,28 @@ async def voice_gather(slug: str, request: Request, db: AsyncSession = Depends(g
   <Say voice="Polly.Joanna">Connecting you now.</Say>
   <Dial><Number>{_escape_xml(sales_phone)}</Number></Dial>
 </Response>"""
+        return Response(content=twiml, media_type="application/xml")
+
+    # Digit 2 (or anything else): the IVR promises a calendar link — keep
+    # that promise when we can match the caller to a prospect; otherwise a
+    # human gets pinged instead of the promise silently evaporating.
+    prospect = await _prospect_by_phone(db, workspace.id, form.get("From", ""))
+    if prospect is not None:
+        call_sid = form.get("CallSid", "")
+        await enqueue(
+            db,
+            "voice_schedule_link",
+            {"workspace_id": workspace.id, "prospect_id": prospect.id},
+            workspace_id=workspace.id,
+            idempotency_key=f"voice-link:{call_sid}" if call_sid else None,
+        )
+        line = "No problem. We'll email you a calendar link shortly. Goodbye."
     else:
-        twiml = """<?xml version="1.0" encoding="UTF-8"?>
+        logger.info("Voice caller not matched to a prospect; no link sent")
+        line = "No problem. We'll follow up by email. Goodbye."
+    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Joanna">No problem. We'll send a calendar link by email. Goodbye.</Say>
+  <Say voice="Polly.Joanna">{line}</Say>
   <Hangup/>
 </Response>"""
     return Response(content=twiml, media_type="application/xml")
@@ -485,13 +576,33 @@ async def voice_gather(slug: str, request: Request, db: AsyncSession = Depends(g
 @router.post("/webhooks/{slug}/voice/status")
 async def voice_status(slug: str, request: Request, db: AsyncSession = Depends(get_db)):
     workspace = await _workspace_by_slug(db, slug)
+    if workspace is None:
+        return _IGNORED
     form = {k: str(v) for k, v in (await request.form()).items()}
     await _verify_twilio_request(db, workspace, request, form)
+    status = form.get("CallStatus", "")
+    duration = form.get("CallDuration", "0")
     logger.info(
         "Call completed | ws=%s sid=%s status=%s duration=%ss",
-        workspace.id, form.get("CallSid"), form.get("CallStatus"),
-        form.get("CallDuration", "0"),
+        workspace.id, form.get("CallSid"), status, duration,
     )
+    # Put the call on the prospect's timeline (and dedup on CallSid so
+    # Twilio's status retries don't produce duplicate rows).
+    prospect = await _prospect_by_phone(db, workspace.id, form.get("From", ""))
+    if prospect is not None and status:
+        sid = form.get("CallSid") or _body_fingerprint(
+            slug, prospect.id, status, duration
+        )
+        if await _claim_event(db, "twilio_voice", f"status:{sid}"):
+            db.add(Message(
+                workspace_id=workspace.id,
+                prospect_id=prospect.id,
+                channel="voice",
+                direction="in",
+                body=f"Call {status} ({duration}s)",
+                provider_message_id=form.get("CallSid") or None,
+                status=status,
+            ))
     return {"received": True}
 
 
@@ -545,12 +656,14 @@ async def unsubscribe_page(
 
 # Handles both the RFC 8058 one-click POST (from the mail provider) and the
 # confirmation form above. Deliberately exempt from CSRF: it is cross-origin
-# by design and strictly less destructive than staying subscribed.
+# by design and strictly less destructive than staying subscribed. Also
+# exempt from the public rate limit: mail providers batch one-click POSTs
+# from shared egress IPs and do not retry a 429 — the unguessable token is
+# the capability, and the write is idempotent.
 @router.post("/u/{token}")
 async def unsubscribe_post(
     token: str, request: Request, db: AsyncSession = Depends(get_db)
 ):
-    check_public_rate(request, "unsubscribe")
     prospect = await _prospect_by_token(db, token)
     await _apply_unsubscribe(db, prospect)
     return HTMLResponse(

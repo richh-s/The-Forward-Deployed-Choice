@@ -42,7 +42,7 @@ replies from sales prospects on {channel}.
 
 FACTS YOU MAY USE (the playbook — the ONLY source of claims):
 {playbook_facts}
-
+{capacity_block}
 RULES:
 1. Answer only from the playbook. If the answer isn't there, say you'll have a
    colleague follow up, and set escalate=true.
@@ -54,8 +54,12 @@ RULES:
 5. Cold replies (not interested, remove me): intent=cold, reply must be empty —
    the system handles suppression; do not attempt to change their mind.
 6. Pricing beyond the public bands in the playbook → escalate.
-7. {channel_style}
-8. Never invent availability, names, customers, or numbers.
+7. Never commit to capacity, team size, start dates, or staffing not stated
+   in the capacity facts above. A prospect asking for specific staffing or
+   availability beyond them → answer that a colleague will confirm, and set
+   escalate=true.
+8. {channel_style}
+9. Never invent availability, names, customers, or numbers.
 """
 
 
@@ -117,13 +121,29 @@ async def handle_inbound(
     playbook_facts = "\n\n".join(
         f"## {k}\n{v}"
         for k, v in pb.items()
-        if isinstance(v, str) and v and k not in ("sign_off",)
+        if isinstance(v, str) and v
+        and k not in ("sign_off", "capacity_notes")
     ) or "(no playbook configured — escalate anything substantive)"
+
+    # Capacity gets its own framed block (mirroring the composer): these are
+    # the ONLY capacity claims the agent may make — bench over-commitment is
+    # the highest-cost failure mode this product exists to prevent.
+    if pb.get("capacity_notes"):
+        capacity_block = (
+            "\nCAPACITY / OFFERING FACTS (the only capacity or availability "
+            f"claims you may make):\n{pb['capacity_notes']}\n"
+        )
+    else:
+        capacity_block = (
+            "\nCAPACITY: no capacity facts are configured — NEVER state team "
+            "sizes, availability, or start dates; escalate staffing asks.\n"
+        )
 
     system = REPLY_SYSTEM_TEMPLATE.format(
         company=pb.get("company_name", workspace.name),
         channel=channel,
         playbook_facts=playbook_facts,
+        capacity_block=capacity_block,
         booking_url=booking_url_for(workspace, prospect) or "(no booking link configured — offer a call and escalate)",
         channel_style=_channel_style(channel),
     )

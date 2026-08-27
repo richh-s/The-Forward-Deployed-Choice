@@ -96,14 +96,17 @@ async def unsuppress(
 
 
 async def increment_daily_counter(
-    db: AsyncSession, workspace_id: str, channel: str, cap: int, amount: int = 1
+    db: AsyncSession, workspace_id: str, channel: str, cap: int, amount: int = 1,
+    *, date_key: str | None = None,
 ) -> None:
     """Atomically increment the day's counter, enforcing the cap in SQL.
 
     The conditional UPDATE (`count + amount <= cap`) is evaluated under the
     row lock, so two concurrent workers cannot both pass a read-then-write
-    check and overshoot the ceiling."""
-    today = utcnow().date().isoformat()
+    check and overshoot the ceiling. `date_key` lets callers bucket by a
+    campaign-local calendar day instead of UTC (a UTC-midnight reset in the
+    middle of a local send window would allow up to 2× the daily cap)."""
+    today = date_key or utcnow().date().isoformat()
     try:
         async with db.begin_nested():
             db.add(DailyCounter(
@@ -132,6 +135,8 @@ async def check_can_send(
     channel: str,
     address: str,
     prospect: Prospect | None = None,
+    *,
+    is_reply: bool = False,
 ) -> None:
     """Raise SendBlocked unless this outbound send is allowed.
     On success, the daily counter has been incremented (call within the same
@@ -144,7 +149,18 @@ async def check_can_send(
         )
     if await is_suppressed(db, workspace.id, channel, address):
         raise SendBlocked(f"Recipient is on the {channel} suppression list")
-    if prospect is not None and prospect.touch_count >= settings.max_touches_per_prospect:
+    # A channel-scoped STOP sets the prospect to opted_out — that must halt
+    # every channel, including drafts approved before the opt-out landed.
+    if prospect is not None and prospect.stage == "opted_out":
+        raise SendBlocked("Prospect has opted out")
+    # The touch ceiling bounds *outreach* volume. A reply answers something
+    # the prospect just sent — blocking it would silently kill exactly the
+    # conversations the ceiling exists to earn.
+    if (
+        not is_reply
+        and prospect is not None
+        and prospect.touch_count >= settings.max_touches_per_prospect
+    ):
         raise SendBlocked(
             f"Prospect reached the touch ceiling "
             f"({settings.max_touches_per_prospect})"

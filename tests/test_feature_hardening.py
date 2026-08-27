@@ -331,7 +331,9 @@ async def test_enrichment_failure_eventually_proceeds_unenriched():
     async with db_session() as db:
         prospect = await db.get(Prospect, prospect_id)
         assert prospect.stage == "enriched"  # proceeds without signals
-        assert prospect.signals == {}
+        # The failure leaves a visible marker for the operator (and the
+        # composer ignores non-dict values, so it still runs inquiry mode).
+        assert prospect.signals == {"_enrichment_failed": True}
 
 
 # ── approvals: clamping and test sends ───────────────────────────────

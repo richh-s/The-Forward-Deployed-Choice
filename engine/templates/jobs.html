@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Jobs{% endblock %}
 {% block content %}
-<div class="grid stats">
+<div class="grid cols-4" style="margin-bottom:16px">
   {% for status in ["pending", "running", "done", "failed", "dead"] %}
-  <div class="card stat">
-    <div class="stat-label">{{ status }}</div>
-    <div class="stat-value">{{ status_counts.get(status, 0) }}</div>
+  <div class="stat">
+    <div class="label">{{ status }}</div>
+    <div class="value {{ 'accent' if status == 'dead' and status_counts.get(status, 0) }}">{{ status_counts.get(status, 0) }}</div>
   </div>
   {% endfor %}
 </div>
 
-<div class="card">
-  <h3>Failing &amp; dead jobs</h3>
+<div class="panel">
+  <h2>Failing &amp; dead jobs</h2>
   {% if not problem_jobs %}
   <p class="muted">Nothing failing — the queue is healthy.</p>
   {% else %}
@@ -40,6 +40,7 @@
       {% endfor %}
     </tbody>
   </table>
+  {% include "_pager.html" %}
   {% endif %}
 </div>
 {% endblock %}

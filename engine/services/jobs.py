@@ -28,7 +28,7 @@ from engine.models import (
     Workspace,
     utcnow,
 )
-from engine.queue import enqueue, job_handler
+from engine.queue import PermanentJobError, enqueue, job_handler
 from engine.services import compose as compose_svc
 from engine.services import enrichment as enrichment_svc
 from engine.services import hubspot as hubspot_svc
@@ -47,7 +47,9 @@ REGENERATION_SCORE = 0.6  # below this, try composing once more with feedback
 async def _load(db: AsyncSession, model, obj_id: str, label: str):
     obj = await db.get(model, obj_id)
     if obj is None:
-        raise RuntimeError(f"{label} {obj_id} not found")
+        # Permanent: a deleted row (e.g. GDPR erasure) will still be gone on
+        # every retry — don't burn five attempts logging errors about it.
+        raise PermanentJobError(f"{label} {obj_id} not found")
     return obj
 
 
@@ -57,10 +59,32 @@ async def _load_scoped(db: AsyncSession, payload: dict):
     workspace = await _load(db, Workspace, payload["workspace_id"], "workspace")
     prospect = await _load(db, Prospect, payload["prospect_id"], "prospect")
     if prospect.workspace_id != workspace.id:
-        raise RuntimeError(
+        raise PermanentJobError(
             f"Prospect {prospect.id} does not belong to workspace {workspace.id}"
         )
     return workspace, prospect
+
+
+@job_handler("slack_notify")
+async def handle_slack_notify(db: AsyncSession, job: Job) -> None:
+    """Slack pings run as their own job, enqueued atomically with the work
+    they announce — notifying mid-transaction would fire for work that later
+    rolls back, and fire again on every retry."""
+    await slack.notify(db, job.payload["workspace_id"], job.payload["text"])
+
+
+async def notify_slack(
+    db: AsyncSession, workspace_id: str, text: str,
+    *, idempotency_key: str | None = None,
+) -> None:
+    await enqueue(
+        db,
+        "slack_notify",
+        {"workspace_id": workspace_id, "text": text},
+        workspace_id=workspace_id,
+        idempotency_key=idempotency_key,
+        max_attempts=2,  # a notification isn't worth five retries
+    )
 
 
 @job_handler("enrich_prospect")
@@ -78,18 +102,32 @@ async def handle_enrich_prospect(db: AsyncSession, job: Job) -> None:
 async def handle_compose_draft(db: AsyncSession, job: Job) -> None:
     p = job.payload
     workspace, prospect = await _load_scoped(db, p)
+    if prospect.stage == "opted_out":
+        return  # opted out since this compose was queued — spend nothing
     campaign = await db.get(Campaign, p["campaign_id"]) if p.get("campaign_id") else None
     if campaign is not None and campaign.workspace_id != workspace.id:
-        raise RuntimeError("Campaign/workspace mismatch in job payload")
+        raise PermanentJobError("Campaign/workspace mismatch in job payload")
     touch_number = int(p.get("touch_number", 1))
-    angle = p.get("angle", "")
+    # First touches carry no angle in the payload — fall back to the
+    # campaign-level angle the operator set (Settings → "Campaign angle").
+    angle = p.get("angle") or (
+        (campaign.playbook or {}).get("angle", "") if campaign else ""
+    )
+    compose_angle = angle
+    if p.get("rejection_feedback"):
+        compose_angle = (
+            f"{angle}\nA previous draft was rejected by a human reviewer — "
+            f"address this feedback: {p['rejection_feedback']}"
+        )
 
-    # Release the transaction before the (potentially minutes-long) LLM
-    # calls — don't hold a DB connection idle-in-transaction.
+    # Resolve the model/key before releasing the transaction, then commit so
+    # the (potentially minutes-long) LLM calls never hold a DB connection
+    # idle-in-transaction.
     await db.commit()
 
     draft_fields, cost = await compose_svc.compose_outreach(
-        db, workspace, prospect, campaign, touch_number=touch_number, angle=angle
+        db, workspace, prospect, campaign,
+        touch_number=touch_number, angle=compose_angle,
     )
     score, feedback, judge_cost, dimensions = await judge_svc.judge_draft(
         db,
@@ -102,8 +140,8 @@ async def handle_compose_draft(db: AsyncSession, job: Job) -> None:
     )
     if score < REGENERATION_SCORE:
         regen_angle = (
-            f"{angle}\nA previous draft failed review with this feedback — "
-            f"fix it: {feedback}"
+            f"{compose_angle}\nA previous draft failed review with this "
+            f"feedback — fix it: {feedback}"
         )
         draft_fields, cost2 = await compose_svc.compose_outreach(
             db, workspace, prospect, campaign,
@@ -163,11 +201,12 @@ async def handle_compose_draft(db: AsyncSession, job: Job) -> None:
             idempotency_key=f"send_draft:{draft.id}",
         )
     else:
-        await slack.notify(
+        await notify_slack(
             db, workspace.id,
             f"📝 Draft for *{prospect.name or prospect.email}* "
             f"({prospect.company or 'unknown company'}) awaits review — "
             f"judge {score:.2f}. {get_settings().base_url}/approvals",
+            idempotency_key=f"slack:draft:{draft.id}",
         )
 
 
@@ -175,6 +214,16 @@ async def handle_compose_draft(db: AsyncSession, job: Job) -> None:
 async def handle_send_draft(db: AsyncSession, job: Job) -> None:
     p = job.payload
     draft = await _load(db, Draft, p["draft_id"], "draft")
+    if draft.status == "sending":
+        # A previous attempt crashed between the provider accepting the
+        # message and the commit. SMS/WhatsApp have no provider-side
+        # idempotency key (unlike Resend), so re-sending could deliver
+        # twice — stop and let a human verify with the provider.
+        raise PermanentJobError(
+            f"Draft {draft.id} is stuck in 'sending' — a previous attempt "
+            "may already have delivered. Verify with the provider, then set "
+            "the draft back to approved to retry."
+        )
     if draft.status not in ("approved",):
         logger.info("Draft %s is %s — not sending", draft.id, draft.status)
         return
@@ -182,22 +231,26 @@ async def handle_send_draft(db: AsyncSession, job: Job) -> None:
     prospect = await _load(db, Prospect, draft.prospect_id, "prospect")
 
     if prospect.workspace_id != workspace.id:
-        raise RuntimeError("Draft prospect/workspace mismatch")
+        raise PermanentJobError("Draft prospect/workspace mismatch")
 
+    is_reply = draft.kind == "reply"
     try:
-        if draft.kind == "reply" and draft.channel == "sms" and prospect.phone:
+        if is_reply and draft.channel == "sms" and prospect.phone:
+            # Mark-and-commit before the provider call so a crash afterwards
+            # is detected (see the 'sending' check above) instead of
+            # silently double-delivering on retry.
+            draft.status = "sending"
+            await db.commit()
             message = await send_sms(
                 db, workspace, prospect,
-                to_phone=prospect.phone, body=draft.body,
+                to_phone=prospect.phone, body=draft.body, is_reply=True,
             )
-        elif (
-            draft.kind == "reply"
-            and draft.channel == "whatsapp"
-            and prospect.phone
-        ):
+        elif is_reply and draft.channel == "whatsapp" and prospect.phone:
+            draft.status = "sending"
+            await db.commit()
             message = await send_whatsapp(
                 db, workspace, prospect,
-                to_phone=prospect.phone, body=draft.body,
+                to_phone=prospect.phone, body=draft.body, is_reply=True,
             )
         else:
             message = await send_email(
@@ -211,12 +264,20 @@ async def handle_send_draft(db: AsyncSession, job: Job) -> None:
                 # Resend-side dedup: a retry after a post-send DB failure
                 # must not deliver this draft a second time.
                 idempotency_key=f"draft-{draft.id}",
+                is_reply=is_reply,
             )
     except SendBlocked as exc:
         draft.status = "failed"
         draft.reject_reason = f"blocked: {exc.reason}"
         logger.warning("Draft %s send blocked: %s", draft.id, exc.reason)
         return
+    except PermanentJobError as exc:
+        # Provider definitively rejected the recipient — nothing was
+        # delivered, so record the outcome on the draft and let the job die.
+        draft.status = "failed"
+        draft.reject_reason = f"provider rejected: {exc}"[:400]
+        await db.commit()
+        raise
 
     draft.status = "sent"
     draft.sent_message_id = message.id
@@ -325,11 +386,12 @@ async def handle_inbound_message(db: AsyncSession, job: Job) -> None:
                 },
             )
         )
-        await slack.notify(
+        await notify_slack(
             db, workspace.id,
             f"🚨 Escalation from *{prospect.name or prospect.email}*: "
             f"{result['escalation_reason']} — "
             f"{get_settings().base_url}/prospects/{prospect.id}",
+            idempotency_key=f"slack:esc:{p.get('message_id') or job.id}",
         )
 
     reply_text = (result.get("reply") or "").strip()
@@ -368,11 +430,12 @@ async def handle_inbound_message(db: AsyncSession, job: Job) -> None:
             idempotency_key=f"send_draft:{draft.id}",
         )
     else:
-        await slack.notify(
+        await notify_slack(
             db, workspace.id,
             f"💬 Reply to *{prospect.name or prospect.email}* awaits review "
             f"({intent} intent, {reply_channel}) — "
             f"{get_settings().base_url}/approvals",
+            idempotency_key=f"slack:reply:{draft.id}",
         )
 
 
@@ -465,19 +528,30 @@ async def handle_weekly_digest(db: AsyncSession, job: Job) -> None:
         )
     )).scalars().all()
     subject = f"{workspace.name} — weekly outreach digest"
+    # Progress is committed after each recipient so a retry (e.g. admin #3's
+    # send failed transiently) never re-emails admins #1 and #2.
+    already_sent = set(job.payload.get("digest_sent") or [])
     delivered = 0
     for admin in admins:
+        if admin.email in already_sent:
+            continue
         try:
             await send_internal_email(
                 db, workspace, to_email=admin.email, subject=subject, body=body
             )
             delivered += 1
+            already_sent.add(admin.email)
+            job.payload["digest_sent"] = sorted(already_sent)
+            await db.commit()
         except SendBlocked as exc:
             # No Resend credentials / sending identity yet — Slack (below)
             # may still land it; don't retry the job for this.
             logger.info("Digest email skipped for %s: %s", workspace.id, exc.reason)
             break
-    await slack.notify(db, workspace.id, f"📊 {subject}\n```{body}```")
+    await notify_slack(
+        db, workspace.id, f"📊 {subject}\n```{body}```",
+        idempotency_key=f"slack:digest:{job.id}",
+    )
     logger.info(
         "Weekly digest for ws=%s: %d email(s), booked=%d",
         workspace.id, delivered, booked,
@@ -497,6 +571,54 @@ async def handle_hubspot_log_event(db: AsyncSession, job: Job) -> None:
     if message is None or message.workspace_id != workspace.id:
         return  # message purged or mismatched — nothing to log
     await hubspot_svc.log_conversation_event(db, workspace, prospect, message)
+
+
+@job_handler("voice_schedule_link")
+async def handle_voice_schedule_link(db: AsyncSession, job: Job) -> None:
+    """Caller pressed 2 in the IVR: email them the booking link. Responsive
+    to an inbound call, so it rides the reply policy (no touch burn)."""
+    from engine.services.booking import booking_url_for
+
+    workspace, prospect = await _load_scoped(db, job.payload)
+    url = booking_url_for(workspace, prospect)
+    if url is None:
+        # No booking link configured — hand the promise to a human instead
+        # of silently dropping it.
+        db.add(AuditLog(
+            workspace_id=workspace.id,
+            action="escalation",
+            detail={
+                "prospect_id": prospect.id,
+                "reason": "Caller asked for a scheduling link (IVR digit 2) "
+                "but no Cal.com event URL is configured",
+            },
+        ))
+        await notify_slack(
+            db, workspace.id,
+            f"📞 *{prospect.name or prospect.email}* asked for a scheduling "
+            "link on a call, but no Cal.com event URL is configured — "
+            "follow up manually.",
+            idempotency_key=f"slack:voicelink:{job.id}",
+        )
+        return
+    company = (workspace.playbook or {}).get("company_name", workspace.name)
+    try:
+        await send_email(
+            db, workspace, prospect,
+            subject=f"Scheduling link from {company}",
+            body=(
+                f"Hi {prospect.name or 'there'},\n\n"
+                "As requested on the call just now, here is the link to book "
+                f"a time that suits you:\n\n{url}\n\n"
+                f"— {company}"
+            ),
+            idempotency_key=f"voice-link-{job.id}",
+            is_reply=True,
+        )
+    except SendBlocked as exc:
+        logger.warning(
+            "Voice scheduling link blocked for %s: %s", prospect.id, exc.reason
+        )
 
 
 @job_handler("hubspot_mark_booked")

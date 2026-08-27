@@ -1,0 +1,13 @@
+{% if pager and pager.pages > 1 %}
+<div class="row" style="justify-content:space-between;align-items:center;margin-top:12px">
+  <span class="muted">Page {{ pager.page }} of {{ pager.pages }} · {{ pager.total }} total</span>
+  <span class="row" style="gap:8px">
+    {% if pager.page > 1 %}
+    <a class="btn secondary" href="?{{ pager.qs }}page={{ pager.page - 1 }}">&larr; Newer</a>
+    {% endif %}
+    {% if pager.page < pager.pages %}
+    <a class="btn secondary" href="?{{ pager.qs }}page={{ pager.page + 1 }}">Older &rarr;</a>
+    {% endif %}
+  </span>
+</div>
+{% endif %}

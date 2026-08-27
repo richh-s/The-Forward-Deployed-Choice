@@ -6,6 +6,7 @@ Africa's Talking does not sign requests, so its route is protected by a
 per-workspace secret URL token instead.
 """
 import base64
+import binascii
 import hashlib
 import hmac
 import time
@@ -42,8 +43,11 @@ def verify_svix(
         raise _forbid("Svix timestamp outside tolerance")
     to_sign = f"{svix_id}.{svix_timestamp}.".encode() + payload
     try:
-        raw_key = base64.b64decode(secret.removeprefix("whsec_"))
-    except Exception as exc:
+        # validate=True: without it, non-alphabet characters are silently
+        # ignored and a mangled secret produces a wrong key (failing as
+        # "invalid signature" instead of the accurate "malformed secret").
+        raw_key = base64.b64decode(secret.removeprefix("whsec_"), validate=True)
+    except binascii.Error as exc:
         raise _forbid("Malformed webhook secret") from exc
     expected = base64.b64encode(
         hmac.new(raw_key, to_sign, hashlib.sha256).digest()

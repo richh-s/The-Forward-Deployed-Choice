@@ -117,4 +117,9 @@ def enrich(prospect: ProspectIn, authorization: str | None = Header(default=None
         "crunchbase_id": (signals.get("signal_1_funding_event") or {}).get(
             "crunchbase_id", ""
         ),
+        # This pipeline derives several AI-maturity sub-signals and the
+        # competitor peer set from deterministic proxies, not live lookups
+        # (see enrichment/pipeline.py). The engine must never let these
+        # reach assertion mode: the flag forces inquiry-mode composition.
+        "synthetic": True,
     }

@@ -22,7 +22,6 @@ composing in inquiry mode) rather than stalling in the pipeline forever.
 """
 import logging
 
-import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from engine.models import Prospect, Workspace
@@ -62,6 +61,13 @@ async def fetch_signals(
         },
     )
     resp.raise_for_status()
+    # Everything in `signals` lands verbatim in LLM prompts (billed by the
+    # token) and in the DB — cap the response size before parsing.
+    if len(resp.content) > 262_144:
+        raise ValueError(
+            f"Enrichment response too large ({len(resp.content)} bytes; "
+            "max 256 KB)"
+        )
     body = resp.json()
     if not isinstance(body, dict):
         raise ValueError(
@@ -80,18 +86,31 @@ async def enrich_prospect(
     """Populate prospect.signals (and ICP segment) and advance to 'enriched'."""
     try:
         body = await fetch_signals(db, workspace, prospect)
-    except (httpx.HTTPError, ValueError):
+    except Exception:  # noqa: BLE001 — see below
         if not final_attempt:
             raise
         # Out of retries: don't hold the prospect hostage to a broken
         # enrichment source — compose without signals (inquiry mode).
+        # Deliberately broad: ANY terminal enrichment failure (transport,
+        # bad response, credential decrypt error) must degrade to inquiry
+        # mode rather than dead-letter — a dead job here would strand the
+        # prospect at 'new' behind the enrich:{id} idempotency key.
         logger.warning(
             "Enrichment failed for prospect %s after retries; "
-            "proceeding unenriched", prospect.id,
+            "proceeding unenriched", prospect.id, exc_info=True,
         )
         body = {}
+        # Leave a visible trace for the operator (shown on the prospect
+        # page); the composer ignores non-dict signal values.
+        prospect.signals = {"_enrichment_failed": True}
     signals = body.get("signals", body)
     if isinstance(signals, dict) and signals:
+        # A source that declares its output synthetic (proxy-derived, not
+        # live lookups — e.g. the bundled challenge pipeline) is marked on
+        # the prospect so the composer can never promote its signals to
+        # assertion mode.
+        if body.get("synthetic"):
+            signals = {**signals, "_synthetic": True}
         prospect.signals = signals
     segment = body.get("icp_segment")
     if isinstance(segment, int) and 1 <= segment <= 4:

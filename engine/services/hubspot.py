@@ -41,7 +41,10 @@ async def _request(token: str, method: str, path: str, json_body: dict) -> httpx
         headers={"Authorization": f"Bearer {token}"},
         json=json_body,
     )
-    if resp.status_code not in (200, 201, 409):
+    # 400 is returned (not raised) so sync_contact can detect a portal
+    # missing the custom properties and degrade to standard fields — raising
+    # here made that fallback unreachable and dead-lettered every sync.
+    if resp.status_code not in (200, 201, 400, 409):
         resp.raise_for_status()
     return resp
 
@@ -107,6 +110,15 @@ async def sync_contact(
         resp = await _request(
             token, "POST", "/crm/v3/objects/contacts",
             {"properties": _contact_properties(prospect)},
+        )
+    if resp.status_code == 400:
+        # Any remaining 400 is deterministic (bad email, malformed value) —
+        # retrying re-sends the identical request.
+        from engine.queue import PermanentJobError
+
+        raise PermanentJobError(
+            f"HubSpot rejected the contact for {prospect.email}: "
+            f"{resp.text[:300]}"
         )
     if resp.status_code == 409:
         # Contact exists — the conflict message carries "Existing ID: <id>"
@@ -188,6 +200,13 @@ async def log_conversation_event(
             }],
         },
     )
+    if resp.status_code == 400:
+        from engine.queue import PermanentJobError
+
+        raise PermanentJobError(
+            f"HubSpot rejected the note for contact {contact_id}: "
+            f"{resp.text[:300]}"
+        )
     resp.raise_for_status()
     logger.info(
         "HubSpot note logged | contact=%s message=%s", contact_id, message.id
@@ -211,19 +230,34 @@ async def mark_meeting_booked(
         contact_id = await sync_contact(db, workspace, prospect)
         if not contact_id:
             return
+    full_props = {
+        "lifecyclestage": "opportunity",
+        "hs_lead_status": "CONNECTED",
+        "meeting_booked": "true",
+        "meeting_time": booking_time,
+        "cal_booking_id": booking_uid,
+    }
     resp = await _request(
         token,
         "PATCH",
         f"/crm/v3/objects/contacts/{contact_id}",
-        {
-            "properties": {
+        {"properties": full_props},
+    )
+    if resp.status_code == 400 and "PROPERTY" in resp.text.upper():
+        # Same degrade path as sync_contact: keep the lifecycle change even
+        # on a portal without the custom booking properties.
+        logger.warning(
+            "HubSpot portal lacks custom booking properties; marking "
+            "lifecycle only (run scripts/setup_hubspot_properties.py)"
+        )
+        resp = await _request(
+            token,
+            "PATCH",
+            f"/crm/v3/objects/contacts/{contact_id}",
+            {"properties": {
                 "lifecyclestage": "opportunity",
                 "hs_lead_status": "CONNECTED",
-                "meeting_booked": "true",
-                "meeting_time": booking_time,
-                "cal_booking_id": booking_uid,
-            }
-        },
-    )
+            }},
+        )
     resp.raise_for_status()
     logger.info("HubSpot contact %s marked booked (%s)", contact_id, booking_uid)

@@ -4,10 +4,20 @@
 <div class="page-head">
   <div>
     <h1>Prospects</h1>
-    <div class="sub">{{ prospects | length }} shown{% if active_stage %} · filtered by
-      <strong>{{ active_stage.replace('_', ' ') }}</strong>{% endif %}</div>
+    <div class="sub">{{ pager.total if pager else prospects | length }} total{% if active_stage %} · filtered by
+      <strong>{{ active_stage.replace('_', ' ') }}</strong>{% endif %}{% if search %} · matching
+      <strong>{{ search }}</strong>{% endif %}</div>
   </div>
-  <a class="btn" href="/campaigns">Import prospects</a>
+  <span class="row" style="gap:8px">
+    <form method="get" action="/prospects" class="row" style="gap:8px">
+      {% if active_stage %}<input type="hidden" name="stage" value="{{ active_stage }}">{% endif %}
+      <input name="q" value="{{ search or '' }}" placeholder="Search name, email, company"
+             style="width:220px">
+      <button class="secondary">Search</button>
+    </form>
+    <a class="btn secondary" href="/prospects.csv">Export CSV</a>
+    <a class="btn" href="/campaigns">Import prospects</a>
+  </span>
 </div>
 
 <div class="panel" style="padding:14px 16px">
@@ -40,6 +50,7 @@
     </tr>
     {% endfor %}
   </table></div>
+  {% include "_pager.html" %}
   {% else %}
   <div class="empty">
     <div class="icon">◉</div>

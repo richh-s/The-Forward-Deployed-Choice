@@ -135,8 +135,18 @@ async def compose_outreach(
     angle: str = "",
 ) -> tuple[dict, float]:
     """Compose one outreach email. Returns (draft fields, llm cost in USD)."""
-    avg_conf = compute_avg_confidence(prospect.signals or {})
-    mode = "ASSERTION" if avg_conf >= ASSERTION_THRESHOLD else "INQUIRY"
+    signals = prospect.signals or {}
+    avg_conf = compute_avg_confidence(signals)
+    # Signals marked synthetic (proxy-derived by the source, not live
+    # lookups) must never be asserted at a prospect, whatever their claimed
+    # confidence — force inquiry mode and suppress the research-finding
+    # opener, which rests on the same proxies.
+    synthetic = bool(signals.get("_synthetic"))
+    mode = (
+        "ASSERTION"
+        if avg_conf >= ASSERTION_THRESHOLD and not synthetic
+        else "INQUIRY"
+    )
 
     followup_note = ""
     if touch_number > 1:
@@ -146,10 +156,16 @@ async def compose_outreach(
             "add one new piece of value, and keep it shorter than the first email."
         )
     angle_note = f"\nCampaign angle to emphasize: {angle}" if angle else ""
-    research_note = research_finding_note(prospect.signals or {})
+    research_note = "" if synthetic else research_finding_note(signals)
+    synthetic_note = (
+        "\nThe signal brief comes from a SYNTHETIC source (proxy-derived, "
+        "not verified lookups). Treat every brief fact as unverified: ask "
+        "about the prospect's situation, never assert it, and never cite "
+        "brief facts as things you know about them."
+    ) if synthetic else ""
 
     user_prompt = f"""Compose a cold outreach email for this prospect.
-Mode: {mode} (average signal confidence: {avg_conf:.2f} — threshold {ASSERTION_THRESHOLD}).
+Mode: {mode} (average signal confidence: {avg_conf:.2f} — threshold {ASSERTION_THRESHOLD}).{synthetic_note}
 In ASSERTION mode you may state facts the brief supports with high confidence.
 In INQUIRY mode ask about the prospect's situation instead of asserting it.
 {followup_note}{angle_note}{research_note}

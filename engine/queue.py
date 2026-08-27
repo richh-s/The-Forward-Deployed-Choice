@@ -79,9 +79,19 @@ async def enqueue(
         async with db.begin_nested():
             db.add(job)
             await db.flush()
-    except IntegrityError:
-        logger.info("Duplicate job suppressed: %s (%s)", job_type, idempotency_key)
-        return None
+    except IntegrityError as exc:
+        # Only a duplicate idempotency key is benign. Any other integrity
+        # failure (NOT NULL, a future FK) silently swallowed here would make
+        # a send or CRM sync vanish without a trace.
+        origin = str(getattr(exc, "orig", exc))
+        if idempotency_key and (
+            "uq_jobs_idem" in origin or "unique" in origin.lower()
+        ):
+            logger.info(
+                "Duplicate job suppressed: %s (%s)", job_type, idempotency_key
+            )
+            return None
+        raise
     return job
 
 
@@ -119,7 +129,10 @@ async def _record_failure(
     async with db_session() as db:
         await db.execute(
             update(Job)
-            .where(Job.id == job_id)
+            # status == "running" fences against the stuck-job reaper: if it
+            # already requeued this job (and another worker may own it now),
+            # this execution must not clobber that state.
+            .where(Job.id == job_id, Job.status == "running")
             .values(
                 status=status,
                 last_error=error[-4000:],
@@ -150,14 +163,39 @@ async def process_one() -> bool:
     handler = _handlers.get(job_type)
     try:
         if handler is None:
-            raise RuntimeError(f"No handler registered for job type {job_type!r}")
+            # A renamed/unregistered type cannot succeed on retry.
+            raise PermanentJobError(
+                f"No handler registered for job type {job_type!r}"
+            )
         async with db_session() as db:
             job = await db.get(Job, job_id)
             if job is None:  # reaped/deleted between claim and execution
                 logger.warning("Job %s vanished after claim; skipping", job_id)
                 return True
+            if job.status != "running":
+                # The stuck-job reaper already reclaimed this execution —
+                # another worker owns it now. Do no work twice.
+                logger.warning(
+                    "Job %s was reclaimed before execution; skipping", job_id
+                )
+                return True
             await handler(db, job)
-            job.status = "done"
+            # Fenced completion: only finish the job if this execution still
+            # owns it. If the reaper requeued it mid-run (long LLM call) and
+            # another worker picked it up, committing here would duplicate
+            # the side effects (drafts, sends) — discard this run instead.
+            res = await db.execute(
+                update(Job)
+                .where(Job.id == job_id, Job.status == "running")
+                .values(status="done")
+            )
+            if not res.rowcount:
+                await db.rollback()
+                logger.warning(
+                    "Job %s was reclaimed by the reaper during execution; "
+                    "discarding this run's work", job_id,
+                )
+                return True
     except asyncio.CancelledError:
         # Shutdown while mid-job: hand the job back to the queue immediately
         # rather than leaving it 'running' until the reaper finds it.

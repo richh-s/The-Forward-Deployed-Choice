@@ -46,7 +46,11 @@ async def record_booking_event(
         logger.warning("Cal.com event %s without uid; ignoring", trigger)
         return None
 
-    metadata = payload.get("metadata") or {}
+    # Signed but structurally unexpected payloads must not 500 (the provider
+    # would retry a permanently broken event forever) — guard every shape.
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
     prospect: Prospect | None = None
     prospect_id = metadata.get("prospect_id")
     if prospect_id:
@@ -61,8 +65,11 @@ async def record_booking_event(
             prospect = None
     if prospect is None:
         # Fall back to attendee email lookup within the workspace.
-        for attendee in payload.get("attendees") or []:
-            email = (attendee.get("email") or "").lower().strip()
+        attendees = payload.get("attendees")
+        for attendee in (attendees if isinstance(attendees, list) else []):
+            if not isinstance(attendee, dict):
+                continue
+            email = str(attendee.get("email") or "").lower().strip()
             if not email:
                 continue
             row = await db.execute(
@@ -87,6 +94,24 @@ async def record_booking_event(
         "BOOKING_CANCELLED": "cancelled",
     }
     status = status_map.get(trigger, "confirmed")
+
+    if booking is None and trigger == "BOOKING_RESCHEDULED" and prospect:
+        # Cal.com issues a NEW uid on reschedule. Without this, the old
+        # booking stays 'confirmed' next to a duplicate 'rescheduled' row —
+        # two upcoming meetings and a second SMS reminder. Update the
+        # prospect's active booking in place instead.
+        row = await db.execute(
+            select(Booking)
+            .where(
+                Booking.workspace_id == workspace.id,
+                Booking.prospect_id == prospect.id,
+                Booking.status.in_(["confirmed", "rescheduled"]),
+            )
+            .order_by(Booking.created_at.desc())
+        )
+        booking = row.scalars().first()
+        if booking is not None:
+            booking.provider_uid = uid
 
     if booking is None:
         booking = Booking(

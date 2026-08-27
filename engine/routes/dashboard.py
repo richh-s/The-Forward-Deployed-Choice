@@ -29,6 +29,40 @@ from engine.templating import templates
 
 router = APIRouter()
 
+# Page sizes for the list pages (previously hard caps — anything past the
+# cap was unreachable in the UI).
+PROSPECTS_PAGE_SIZE = 300
+CAMPAIGN_PROSPECTS_PAGE_SIZE = 200
+APPROVALS_PAGE_SIZE = 100
+JOBS_PAGE_SIZE = 50
+
+
+async def _paged(
+    db: AsyncSession, request: Request, query, page_size: int
+):
+    """Offset pagination driven by ?page=. Returns (Result, pager) where
+    pager is the context for templates/_pager.html; the caller finishes
+    with .scalars().all() or .all() as before."""
+    from urllib.parse import urlencode
+
+    try:
+        page = max(1, int(request.query_params.get("page", "1")))
+    except ValueError:
+        page = 1
+    total = int((await db.execute(
+        select(func.count()).select_from(query.order_by(None).subquery())
+    )).scalar_one())
+    pages = max(1, -(-total // page_size))
+    result = await db.execute(
+        query.limit(page_size).offset((page - 1) * page_size)
+    )
+    keep = {
+        k: v for k, v in request.query_params.items()
+        if k not in ("page", "msg")
+    }
+    qs = urlencode(keep) + "&" if keep else ""
+    return result, {"page": page, "pages": pages, "total": total, "qs": qs}
+
 
 async def _ctx(
     request: Request, auth: AuthContext, db: AsyncSession, **extra
@@ -134,12 +168,14 @@ async def campaign_detail(
         .where(Prospect.campaign_id == campaign.id)
         .group_by(Prospect.stage)
     )
-    prospects = (await db.execute(
+    result, pager = await _paged(
+        db, request,
         select(Prospect)
         .where(Prospect.campaign_id == campaign.id)
-        .order_by(Prospect.created_at.desc())
-        .limit(200)
-    )).scalars().all()
+        .order_by(Prospect.created_at.desc()),
+        CAMPAIGN_PROSPECTS_PAGE_SIZE,
+    )
+    prospects = result.scalars().all()
     return templates.TemplateResponse(
         request, "campaign_detail.html",
         await _ctx(
@@ -148,6 +184,7 @@ async def campaign_detail(
             stage_counts=dict(stage_rows.all()),
             stages=PROSPECT_STAGES,
             prospects=prospects,
+            pager=pager,
         ),
     )
 
@@ -159,16 +196,29 @@ async def prospects_page(
     db: AsyncSession = Depends(get_db),
 ):
     stage = request.query_params.get("stage", "")
+    q = request.query_params.get("q", "").strip()[:200]
     query = select(Prospect).where(Prospect.workspace_id == auth.workspace.id)
     if stage and stage in PROSPECT_STAGES:
         query = query.where(Prospect.stage == stage)
-    prospects = (await db.execute(
-        query.order_by(Prospect.updated_at.desc()).limit(300)
-    )).scalars().all()
+    if q:
+        # Escape LIKE wildcards so a literal % or _ in the search behaves.
+        needle = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{needle}%"
+        query = query.where(
+            Prospect.email.ilike(pattern, escape="\\")
+            | Prospect.name.ilike(pattern, escape="\\")
+            | Prospect.company.ilike(pattern, escape="\\")
+        )
+    result, pager = await _paged(
+        db, request,
+        query.order_by(Prospect.updated_at.desc()),
+        PROSPECTS_PAGE_SIZE,
+    )
+    prospects = result.scalars().all()
     return templates.TemplateResponse(
         request, "prospects.html",
         await _ctx(request, auth, db, prospects=prospects, stages=PROSPECT_STAGES,
-             active_stage=stage),
+             active_stage=stage, search=q, pager=pager),
     )
 
 
@@ -210,18 +260,21 @@ async def approvals_page(
     auth: AuthContext = Depends(current_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    drafts = (await db.execute(
+    result, pager = await _paged(
+        db, request,
         select(Draft, Prospect)
         .join(Prospect, Draft.prospect_id == Prospect.id)
         .where(
             Draft.workspace_id == auth.workspace.id,
             Draft.status == "pending_review",
         )
-        .order_by(Draft.created_at)
-        .limit(100)
-    )).all()
+        .order_by(Draft.created_at),
+        APPROVALS_PAGE_SIZE,
+    )
+    drafts = result.all()
     return templates.TemplateResponse(
-        request, "approvals.html", await _ctx(request, auth, db, rows=drafts)
+        request, "approvals.html",
+        await _ctx(request, auth, db, rows=drafts, pager=pager),
     )
 
 
@@ -297,17 +350,19 @@ async def jobs_page(
         .where(Job.workspace_id == ws_id)
         .group_by(Job.status)
     )
-    problem_jobs = (await db.execute(
+    result, pager = await _paged(
+        db, request,
         select(Job)
         .where(Job.workspace_id == ws_id, Job.status.in_(["failed", "dead"]))
-        .order_by(Job.updated_at.desc())
-        .limit(50)
-    )).scalars().all()
+        .order_by(Job.updated_at.desc()),
+        JOBS_PAGE_SIZE,
+    )
+    problem_jobs = result.scalars().all()
     return templates.TemplateResponse(
         request, "jobs.html",
         await _ctx(request, auth, db,
              status_counts=dict(status_rows.all()),
-             problem_jobs=problem_jobs),
+             problem_jobs=problem_jobs, pager=pager),
     )
 
 
@@ -356,6 +411,13 @@ async def settings_page(
             webhook_urls=webhook_urls,
             team=team,
             llm_defaults=llm_defaults,
+            killswitch_defaults={
+                "opt_out_rate": settings.killswitch_opt_out_rate,
+                "bounce_rate": settings.killswitch_bounce_rate,
+                "cost_per_qualified_lead":
+                    settings.killswitch_cost_per_qualified_lead_usd,
+                "max_llm_cost_usd": settings.killswitch_max_llm_cost_usd,
+            },
             local_llm_configured=bool(settings.local_llm_base_url),
             local_llm_base_url=settings.local_llm_base_url,
             welcome=request.query_params.get("welcome", ""),

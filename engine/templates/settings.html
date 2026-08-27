@@ -7,6 +7,14 @@
   webhook URLs — then create a campaign and import prospects.</div>
 {% endif %}
 
+{% set is_admin = user.role == 'admin' %}
+{% if not is_admin %}
+<div class="banner warn">You have the operator role — provider credentials,
+  playbook, models, team, and outbound controls below are admin-only and
+  hidden. Ask an admin for changes to them.</div>
+{% endif %}
+
+{% if is_admin %}
 <div class="panel">
   <h2>Workspace &amp; sending identity</h2>
   <form method="post" action="/settings/workspace">{{ csrf_field(request) }}
@@ -23,6 +31,7 @@
     <div style="margin-top:10px"><button>Save</button></div>
   </form>
 </div>
+{% endif %}
 
 <div class="panel">
   <h2>Outbound control</h2>
@@ -38,6 +47,7 @@
       LIVE_MODE; all messages route to the configured sink address.
     {% endif %}
   </p>
+  {% if is_admin %}
   <div class="row">
     {% if workspace.outbound_paused %}
     <form method="post" action="/settings/resume-outbound"
@@ -60,8 +70,35 @@
       questions) are always held regardless.</p>
     <button class="secondary">Save reply policy</button>
   </form>
+  <hr style="margin:16px 0;border:none;border-top:1px solid var(--line, #ddd)">
+  <form method="post" action="/settings/killswitch">{{ csrf_field(request) }}
+    <h3 style="margin-top:0">Kill-switch thresholds</h3>
+    <p class="muted" style="margin:0 0 10px">Breaching any of these pauses all
+      outbound automatically. Blank = platform default. Rates are fractions
+      (0.05 = 5%). Resuming restarts the measurement window.</p>
+    <div class="grid cols-4">
+      <div><label>Opt-out rate</label>
+        <input name="opt_out_rate" value="{{ workspace.killswitch.get('opt_out_rate', '') }}"
+               placeholder="{{ killswitch_defaults.opt_out_rate }}"></div>
+      <div><label>Bounce rate</label>
+        <input name="bounce_rate" value="{{ workspace.killswitch.get('bounce_rate', '') }}"
+               placeholder="{{ killswitch_defaults.bounce_rate }}"></div>
+      <div><label>Cost / qualified lead ($)</label>
+        <input name="cost_per_qualified_lead" value="{{ workspace.killswitch.get('cost_per_qualified_lead', '') }}"
+               placeholder="{{ killswitch_defaults.cost_per_qualified_lead }}"></div>
+      <div><label>LLM spend ceiling ($)</label>
+        <input name="max_llm_cost_usd" value="{{ workspace.killswitch.get('max_llm_cost_usd', '') }}"
+               placeholder="{{ killswitch_defaults.max_llm_cost_usd }}"></div>
+    </div>
+    <div style="margin-top:10px"><button class="secondary">Save thresholds</button></div>
+  </form>
+  {% else %}
+  <p class="muted">Pausing/resuming outbound and threshold changes are
+    admin-only.</p>
+  {% endif %}
 </div>
 
+{% if is_admin %}
 <div class="panel">
   <h2>Playbook</h2>
   <p class="muted">The composer and reply agent may only make claims that
@@ -135,7 +172,9 @@
 
 <div class="panel">
   <h2>Provider credentials</h2>
-  <p class="muted">Stored encrypted. Configured:
+  <p class="muted">Stored encrypted. Saving merges with what's stored — you
+    can update a single field (e.g. rotate an api_key) without re-typing the
+    others. Configured:
     {% for p in configured %}<span class="badge good">{{ p }}</span>{% else %}
     <span class="muted">none yet</span>{% endfor %}</p>
   {% for provider, fields in provider_fields.items() %}
@@ -164,6 +203,8 @@
     is shown above to admins.</p>
 </div>
 
+{% endif %}{# is_admin: playbook/models/credentials/webhooks #}
+
 <div class="panel">
   <h2>Team</h2>
   {% if team is defined and team %}
@@ -186,6 +227,7 @@
     {% endfor %}
   </table>
   {% endif %}
+  {% if is_admin %}
   <form method="post" action="/settings/users">{{ csrf_field(request) }}
     <div class="grid cols-3">
       <div><label>Email</label><input type="email" name="email" required></div>
@@ -198,16 +240,20 @@
     <input type="password" name="password" minlength="10" required>
     <div style="margin-top:10px"><button class="secondary">Add user</button></div>
   </form>
+  {% else %}
+  <p class="muted">Adding teammates is admin-only.</p>
+  {% endif %}
 </div>
 
+{% if is_admin %}
 <div class="panel">
   <h2>Judge fine-tuning data</h2>
   <p class="muted">Every human review (approve, reject, edit) is a labeled
     example. Export them as JSONL to fine-tune a workspace-specific judge —
     swap it in via the <span class="mono">local:</span> judge model above.</p>
-  <a href="/settings/export-judge-data"><button class="secondary" type="button">
-    Download judge_training_data.jsonl</button></a>
+  <a class="btn secondary" href="/settings/export-judge-data">Download judge_training_data.jsonl</a>
 </div>
+{% endif %}
 
 <div class="panel">
   <h2>Your account</h2>

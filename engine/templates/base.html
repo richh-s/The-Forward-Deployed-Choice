@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Conversion Engine{% endblock %} · 10 Academy</title>
+  <title>{% block title %}Conversion Engine{% endblock %} · {{ workspace.name if workspace is defined and workspace else 'Conversion Engine' }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,7 +15,7 @@
 <div class="app">
   <aside class="sidebar">
     <div class="brand-row">
-      <span class="logo"><span class="mark">10<sup>ac</sup></span></span>
+      <span class="logo"><span class="mark">CE</span></span>
       <div class="ws-name">{{ workspace.name }}</div>
       <div class="ws-sub">Conversion Engine</div>
     </div>
@@ -42,7 +42,7 @@
       {% else %}<span class="badge good dot">Sending live</span>{% endif %}
     </div>
     <div class="content">
-      {% if msg is defined and msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+      {% if msg is defined and msg %}<div class="banner {{ 'bad' if request.query_params.get('err') else 'ok' }}">{{ msg }}</div>{% endif %}
       {% if workspace is defined and workspace and workspace.outbound_paused %}
         <div class="banner bad">Outbound is paused: {{ workspace.pause_reason }} —
           review in <a href="/settings">Settings</a>.</div>

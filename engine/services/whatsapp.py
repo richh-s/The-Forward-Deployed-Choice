@@ -71,6 +71,7 @@ async def send_whatsapp(
     to_phone: str,
     body: str,
     skip_policy_checks: bool = False,
+    is_reply: bool = False,
 ) -> Message:
     """Policy-checked, sink-gated WhatsApp send (mirrors send_sms).
 
@@ -86,7 +87,9 @@ async def send_whatsapp(
     to_phone = normalize_phone(to_phone)
     intended_recipient = to_phone
     if not skip_policy_checks:
-        await check_can_send(db, workspace, "whatsapp", to_phone, prospect)
+        await check_can_send(
+            db, workspace, "whatsapp", to_phone, prospect, is_reply=is_reply
+        )
 
     if not settings.live_mode:
         if not settings.sink_phone:

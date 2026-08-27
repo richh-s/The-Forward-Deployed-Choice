@@ -2,7 +2,7 @@
 
 Multi-tenant AI outbound conversion platform: signal-grounded email outreach
 composed by Claude, gated by an LLM judge and human approval, with a
-conversational reply agent, SMS handoff, Cal.com booking, HubSpot sync, and a
+conversational reply agent, SMS/WhatsApp conversations, Cal.com booking, HubSpot sync, and a
 compliance layer (durable suppression, kill-switch, sink mode) built in.
 
 This document is the handover reference for operating it as a product.
@@ -106,7 +106,9 @@ credentials (encrypted at rest), suppression list, campaigns, and users.
   still have **escalated replies always held** — model output produced from
   attacker-controllable inbound text never reaches a prospect unreviewed
   unless an admin explicitly chose that. Sending a reply never advances the
-  touch count or follow-up sequence.
+  touch count or follow-up sequence — and the per-prospect touch ceiling
+  never blocks a reply: it bounds outreach volume, not answers to someone
+  who wrote in.
 - **Cold intent** → both channels suppressed, prospect → `opted_out`, no reply.
 - **Cal.com webhook** (BOOKING_CREATED/CANCELLED/RESCHEDULED) records the
   booking, advances the prospect to `booked`, and queues the HubSpot update.
@@ -203,9 +205,9 @@ tailnet — set it empty in a non-tailnet deploy to keep every role on Claude.
 | Suppression | Durable DB table per (workspace, channel, address); written on STOP, unsubscribe, bounce, complaint, cold intent, manual action; checked before **every** send *and re-checked at the last instant before the provider call*. STOP confirmations bypass policy checks as required by carrier rules |
 | Unsubscribe | Every email carries `List-Unsubscribe` + one-click POST + a visible link to `/u/{token}`. The GET renders a confirmation page only (mail scanners prefetch links); the POST performs the write. Rate-limited |
 | Sink mode | `LIVE_MODE=false` (default) reroutes all outbound to `SINK_EMAIL`/`SINK_PHONE`. Missing sink → send refused, never silently delivered |
-| Kill-switch | Rolling 7-day opt-out rate, bounce rate, cost per qualified lead (20-send floor), **plus an absolute LLM spend ceiling** that trips even at zero conversions — and even at zero *sends*: compose/judge spend is counted on the Draft the moment it is incurred, so a compose→reject loop cannot burn budget invisibly. Breach → workspace outbound paused + audit log; admin reviews and resumes in Settings |
+| Kill-switch | Rolling 7-day opt-out rate, bounce rate, cost per qualified lead (20-send floor), **plus an absolute LLM spend ceiling** that trips even at zero conversions — and even at zero *sends*: compose/judge spend is counted on the Draft the moment it is incurred, so a compose→reject loop cannot burn budget invisibly. Breach → workspace outbound paused + audit log; admin reviews and resumes in Settings. Resuming sets a watermark: only activity *after* the resume counts toward the next evaluation, so the same already-reviewed window cannot instantly re-trip the switch. Thresholds are editable per workspace in Settings → Outbound control |
 | Volume caps | Per-workspace daily email/SMS/WhatsApp caps (atomic SQL increments — no race overshoot), campaign `daily_cap` enforced per calendar day, per-prospect touch ceiling (default 4), email cap additionally shaped by the domain warm-up ramp |
-| Credentials | Per-workspace provider secrets encrypted (Fernet, HKDF-derived key, `APP_SECRET_KEY_OLD` rotation path); write-validated per-provider field allowlist with https-only URLs (no SSRF via tenant config); never rendered back in the UI. One deliberate exception: the Africa's Talking **webhook URL token** (URL auth, not an API secret) is shown to admins in the registered-URL list — without it the webhook could never be registered |
+| Credentials | Per-workspace provider secrets encrypted (Fernet, HKDF-derived key, `APP_SECRET_KEY_OLD` rotation path); write-validated per-provider field allowlist with https-only URLs whose hosts must not be (or resolve to) private/link-local/metadata addresses (SSRF defense-in-depth; resolved at save time, redirects disabled on the shared client); never rendered back in the UI. One deliberate exception: the Africa's Talking **webhook URL token** (URL auth, not an API secret) is shown to admins in the registered-URL list — without it the webhook could never be registered |
 | PII deletion | `POST /prospects/{id}/delete` (admin) erases the prospect and their messages/drafts/bookings while keeping the suppression entry (the lawful basis for honoring the opt-out) |
 | Cost tracking | Real per-model pricing on every LLM call, stored where it is incurred (compose+judge on the Draft, reply-agent cost on the reply Draft), aggregated in Analytics and the kill-switch |
 | Audit trail | Login success/failure, setup, campaign status, approvals/bulk-approve, credential & model changes, kill-switch pauses, job retries, PII deletions |
@@ -274,8 +276,13 @@ Notes:
   and runs `alembic check` so a forgotten migration fails the build.
 - `/health` is a real readiness check (DB ping + worker/scheduler heartbeat
   staleness); `/health/live` is bare liveness; `/metrics` serves Prometheus
-  text metrics behind `METRICS_TOKEN`. Logs are JSON in production with a
-  per-request `X-Request-ID` correlation id.
+  text metrics behind `METRICS_TOKEN`. Because the web tier's `/health`
+  cannot see the separate worker process, `/metrics` exposes DB-derived
+  queue lag — `engine_jobs_runnable` and
+  `engine_jobs_oldest_runnable_age_seconds` — which is the signal to alert
+  on for a dead or wedged worker (a healthy worker keeps the age near
+  zero). Logs are JSON in production with a per-request `X-Request-ID`
+  correlation id.
 - Retention: done/dead jobs, webhook-event ledger rows, expired sessions,
   and old daily counters are purged daily on configurable windows
   (`RETENTION_*` env vars).
@@ -303,7 +310,7 @@ Notes:
 |---|---|---|
 | Outbound stopped for a workspace | Banner on every page; Settings shows pause reason; audit log `killswitch_pause` | Investigate the breached metric in Analytics; resume in Settings |
 | Draft stuck in "approved" | **Jobs page** (`/jobs`): `send_draft` row `failed`/`dead` with its error | Fix the cause (credentials, Resend outage); click **Retry** |
-| Whole pipeline silent | `/health` returns 503 with the failing check named; `/metrics` job counts | Restart the worker service; stuck `running` jobs are reaped automatically every scheduler pass |
+| Whole pipeline silent | `/health` returns 503 with the failing check named; `/metrics` `engine_jobs_oldest_runnable_age_seconds` climbing means the worker service is dead or wedged even while the web tier's `/health` is green | Restart the worker service; stuck `running` jobs are reaped automatically every scheduler pass |
 | Webhook 401s | Provider dashboard delivery logs | Signing secret mismatch — re-save credentials; AT: token in URL must match; Svix: check clock skew (±5 min tolerance) |
 | Replies not answered | `inbound_message` jobs on `/jobs`; prospect timeline shows inbound with no outbound | Check Anthropic key/credit; job retries automatically |
 | Emails in spam | — | Verified domain, warm-up, lower daily cap; check bounce rate in Analytics |
@@ -320,20 +327,23 @@ set.
 
 ## 7. Extension points
 
-- **Live enrichment** (wired, challenge pipeline included): `Prospect.signals`
-  is the contract — a JSON object of named signals with `confidence`. Point
-  the workspace `enrichment` credential at any endpoint implementing
-  `POST {email, name, company, title, phone} → {"signals": {...},
-  "icp_segment": 1-4}` (https, or http://localhost in dev). The Week-10
-  pipeline ships ready to serve in exactly that shape:
-  `ENRICHMENT_API_KEY=<key> uvicorn enrichment.service:app --port 8100` —
-  Crunchbase ODM (full 1,000-record sample via
-  `scripts/fetch_crunchbase_odm.py`) + layoffs.fyi + job-post velocity +
-  AI-maturity scoring + ICP segment classification + the **competitor gap
-  brief**, which the composer uses to lead outreach with a research finding
-  (confidence-gated: low-confidence gaps are never mentioned to a prospect).
-  CSV rows with a `signals` column and the per-prospect signals editor keep
-  working as manual sources.
+- **Enrichment source** (contract wired; bring a live provider):
+  `Prospect.signals` is the contract — a JSON object of named signals with
+  `confidence`. Point the workspace `enrichment` credential at any endpoint
+  implementing `POST {email, name, company, title, phone} → {"signals":
+  {...}, "icp_segment": 1-4}` (https to a public host; http://localhost in
+  dev). The Week-10 challenge pipeline ships serving exactly that shape
+  (`ENRICHMENT_API_KEY=<key> uvicorn enrichment.service:app --port 8100` —
+  Crunchbase ODM sample + layoffs.fyi + job-post velocity + AI-maturity
+  scoring + ICP classification + the **competitor gap brief**), but note:
+  **several of its sub-signals are deterministic proxies, not live
+  lookups**. It therefore declares `"synthetic": true` in its responses,
+  and the engine hard-gates that: synthetic-flagged signals always compose
+  in inquiry mode (never assertion), and the research-finding opener is
+  suppressed. For assertion-mode outreach, connect a real provider
+  (Clay/Apollo-style wrapper or an internal service) that returns verified
+  signals without the flag. CSV rows with a `signals` column and the
+  per-prospect signals editor keep working as manual sources.
 - **Market-space map** (stretch deliverable): `scripts/build_market_space.py`
   clusters the full ODM sample into sector × size × AI-readiness cells scored
   for bench match — outputs `market_space.csv` / `top_cells.md`, with proxy

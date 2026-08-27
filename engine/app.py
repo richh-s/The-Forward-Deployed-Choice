@@ -80,9 +80,12 @@ def create_app() -> FastAPI:
         redoc_url=None,
     )
 
-    # Outermost first: correlation id, then headers, then body limits.
-    app.add_middleware(SecurityHeadersMiddleware)
+    # add_middleware prepends: last added runs outermost. Effective order is
+    # RequestID → SecurityHeaders → BodySizeLimit → app, so the body
+    # limiter's own 413 still passes through the security-header and
+    # request-id wrappers.
     app.add_middleware(BodySizeLimitMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestIDMiddleware)
 
     from pathlib import Path
@@ -181,6 +184,27 @@ def create_app() -> FastAPI:
                 lines.append(
                     f'engine_jobs_total{{status="{status}"}} {count}'
                 )
+            # Queue lag, visible from the web tier (DB-derived, not
+            # process-local heartbeats): a dead or wedged worker shows up
+            # as a growing runnable backlog. Alert on
+            # engine_jobs_oldest_runnable_age_seconds.
+            now = utcnow()
+            runnable = Job.status.in_(["pending", "failed"]) & (
+                Job.run_after <= now
+            )
+            depth = (await db.execute(
+                select(func.count()).select_from(Job).where(runnable)
+            )).scalar_one()
+            lines.append(f"engine_jobs_runnable {depth}")
+            oldest = (await db.execute(
+                select(func.min(Job.run_after)).where(runnable)
+            )).scalar_one()
+            from engine.models import as_aware
+
+            age = (now - as_aware(oldest)).total_seconds() if oldest else 0.0
+            lines.append(
+                f"engine_jobs_oldest_runnable_age_seconds {age:.0f}"
+            )
             day_ago = utcnow() - timedelta(hours=24)
             out_24h = (await db.execute(
                 select(func.count()).select_from(Message).where(
@@ -212,6 +236,22 @@ def create_app() -> FastAPI:
             status_code=exc.status_code,
             content={"detail": exc.detail},
             headers=exc.headers,
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception):
+        # Without this, unhandled 500s are logged by uvicorn's own logger in
+        # plain format, bypassing the JSON formatter and losing the
+        # request_id — searches by correlation id would miss every 500.
+        from engine.middleware import _BodyTooLarge
+
+        if isinstance(exc, _BodyTooLarge):
+            raise exc  # let BodySizeLimitMiddleware answer with its 413
+        logger.exception(
+            "Unhandled error on %s %s", request.method, request.url.path
+        )
+        return JSONResponse(
+            status_code=500, content={"detail": "Internal Server Error"}
         )
 
     return app

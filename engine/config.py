@@ -72,7 +72,10 @@ class Settings(BaseSettings):
     scheduler_interval_seconds: float = 60.0
     job_max_attempts: int = 5
     # Jobs stuck in 'running' longer than this are requeued by the reaper.
-    job_stuck_after_minutes: int = 15
+    # Must exceed the worst-case job runtime: a compose job can make four
+    # LLM calls (compose, judge, regenerate, re-judge), each with SDK-level
+    # timeouts and retries — reaping too early duplicates drafts and spend.
+    job_stuck_after_minutes: int = 45
     # Worker drain window on shutdown before in-flight jobs are cancelled.
     shutdown_grace_seconds: float = 20.0
 

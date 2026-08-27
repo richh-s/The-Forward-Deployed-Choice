@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Approval queue</h1>
-    <div class="sub">{{ rows | length }} draft{{ 's' if rows | length != 1 }} awaiting review</div>
+    <div class="sub">{{ pager.total if pager else rows | length }} draft{{ 's' if (pager.total if pager else rows | length) != 1 }} awaiting review</div>
   </div>
   {% if rows %}
   <form class="inline row" method="post" action="/approvals/bulk-approve"
@@ -70,7 +70,7 @@
   </details>
   {% endif %}
   <form method="post" action="/approvals/{{ draft.id }}/approve">{{ csrf_field(request) }}
-    {% if draft.channel != 'sms' %}
+    {% if draft.channel not in ('sms', 'whatsapp') %}
     <label>Subject</label>
     <input name="subject" value="{{ draft.subject }}" required>
     {% endif %}
@@ -92,4 +92,5 @@
   <form id="test-{{ draft.id }}" method="post" action="/approvals/{{ draft.id }}/test-send">{{ csrf_field(request) }}</form>
 </div>
 {% endfor %}
+{% include "_pager.html" %}
 {% endblock %}

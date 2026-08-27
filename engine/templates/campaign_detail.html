@@ -45,7 +45,7 @@
         <div><label>Daily cap</label>
           <input type="number" name="daily_cap" value="{{ campaign.daily_cap }}" min="1" max="500"></div>
         <div><label>Auto-approve score (0–1)</label>
-          <input type="number" step="0.05" name="auto_approve_score" value="{{ campaign.auto_approve_score }}"></div>
+          <input type="number" step="0.05" min="0" max="1" name="auto_approve_score" value="{{ campaign.auto_approve_score }}"></div>
         <div><label>Send window start hour</label>
           <input type="number" name="send_window_start_hour" value="{{ campaign.send_window_start_hour }}" min="0" max="23"></div>
         <div><label>Send window end hour</label>
@@ -83,6 +83,7 @@
     </tr>
     {% endfor %}
   </table>
+  {% include "_pager.html" %}
   {% else %}<p class="muted">No prospects yet — import a CSV above.</p>{% endif %}
 </div>
 {% endblock %}

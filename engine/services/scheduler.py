@@ -35,12 +35,35 @@ logger = logging.getLogger(__name__)
 _last_purge_date: str | None = None
 
 
-def _in_send_window(campaign: Campaign) -> bool:
+def _campaign_now(campaign: Campaign) -> datetime:
     try:
-        now = datetime.now(ZoneInfo(campaign.timezone or "UTC"))
-    except Exception:
-        now = datetime.now(ZoneInfo("UTC"))
-    return campaign.send_window_start_hour <= now.hour < campaign.send_window_end_hour
+        return datetime.now(ZoneInfo(campaign.timezone or "UTC"))
+    except (KeyError, ValueError):
+        # Write-time validation rejects bad zones now, but pre-existing rows
+        # may carry one — fall back loudly, not silently.
+        logger.warning(
+            "Campaign %s has invalid timezone %r; using UTC",
+            campaign.id, campaign.timezone,
+        )
+        return datetime.now(ZoneInfo("UTC"))
+
+
+def _in_send_window(campaign: Campaign) -> bool:
+    now = _campaign_now(campaign)
+    start, end = campaign.send_window_start_hour, campaign.send_window_end_hour
+    if start == end:
+        return False  # degenerate window (rejected at write time) — closed
+    if start < end:
+        return start <= now.hour < end
+    # Overnight window (e.g. 18 → 8): open from start through midnight to end.
+    return now.hour >= start or now.hour < end
+
+
+def _campaign_today(campaign: Campaign) -> str:
+    """The campaign's local calendar day — the daily cap must reset at local
+    midnight, not UTC midnight (which can fall inside the send window and
+    allow 2× the cap in one local day)."""
+    return _campaign_now(campaign).date().isoformat()
 
 
 def _queue_bucket(campaign: Campaign) -> str:
@@ -48,11 +71,10 @@ def _queue_bucket(campaign: Campaign) -> str:
 
 
 async def _queued_today(db, campaign: Campaign) -> int:
-    today = utcnow().date().isoformat()
     row = await db.execute(
         select(DailyCounter.count).where(
             DailyCounter.workspace_id == campaign.workspace_id,
-            DailyCounter.date == today,
+            DailyCounter.date == _campaign_today(campaign),
             DailyCounter.channel == _queue_bucket(campaign),
         )
     )
@@ -119,6 +141,7 @@ async def _tick_campaign(db, campaign: Campaign, *, enrich: bool) -> None:
             await increment_daily_counter(
                 db, campaign.workspace_id, _queue_bucket(campaign),
                 cap=campaign.daily_cap,
+                date_key=_campaign_today(campaign),
             )
         except SendBlocked:
             return  # today's budget spent

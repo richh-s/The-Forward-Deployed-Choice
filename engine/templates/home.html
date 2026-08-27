@@ -61,7 +61,7 @@
       {% for e in escalations %}
       <tr>
         <td class="muted">{{ e.created_at.strftime('%b %d, %H:%M') }}</td>
-        <td>{{ e.detail.get('reason', '')[:120] }}
+        <td>{{ (e.detail.get('reason') or '')[:120] }}
           {% if e.detail.get('prospect_id') %}
           — <a href="/prospects/{{ e.detail['prospect_id'] }}">view prospect</a>{% endif %}</td>
       </tr>
