@@ -18,6 +18,16 @@ _CSP = (
     "base-uri 'self'"
 )
 
+# The Next.js static export at /app hydrates via inline bootstrap scripts
+# (flight data), which a bare `default-src 'self'` blocks — the SPA would
+# render an empty page. Static exports cannot use nonces and the inline
+# payloads change per page, so 'unsafe-inline' for scripts is scoped to
+# /app only; every other route keeps the strict policy.
+_CSP_APP = _CSP.replace(
+    "default-src 'self'; ",
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; ",
+)
+
 
 class SecurityHeadersMiddleware:
     def __init__(self, app: ASGIApp):
@@ -28,6 +38,8 @@ class SecurityHeadersMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        path = scope.get("path", "")
+        csp = _CSP_APP if path == "/app" or path.startswith("/app/") else _CSP
 
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
@@ -36,7 +48,7 @@ class SecurityHeadersMiddleware:
                     (b"x-content-type-options", b"nosniff"),
                     (b"x-frame-options", b"DENY"),
                     (b"referrer-policy", b"strict-origin-when-cross-origin"),
-                    (b"content-security-policy", _CSP.encode()),
+                    (b"content-security-policy", csp.encode()),
                 ])
                 if self.hsts:
                     headers.append((
