@@ -367,7 +367,9 @@ function SettingsInner() {
             Self-hosted endpoint:{" "}
             {data.local_llm_configured ? (
               <>
-                <Badge tone="good">connected</Badge>{" "}
+                {/* "configured", not "connected": only the env var is
+                    checked — reachability isn't verified until a call. */}
+                <Badge tone="good">configured</Badge>{" "}
                 <span className="mono">{data.local_llm_base_url}</span>
               </>
             ) : (

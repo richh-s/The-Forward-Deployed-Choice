@@ -74,7 +74,11 @@ function CampaignsInner() {
                   <th>Status</th>
                   <th>Prospects</th>
                   <th>Daily cap</th>
-                  <th>LLM cost</th>
+                  {/* Compose+judge spend attributed to this campaign's
+                      drafts; reply-agent costs aren't campaign-scoped. */}
+                  <th title="Compose + judge spend on this campaign's drafts">
+                    Compose cost
+                  </th>
                   <th>Angle</th>
                   <th></th>
                 </tr>

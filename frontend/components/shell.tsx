@@ -97,8 +97,15 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
             )}
             {me.workspace.outbound_paused ? (
               <span className="badge bad dot">Outbound paused</span>
-            ) : (
+            ) : me.live_mode ? (
               <span className="badge good dot">Sending live</span>
+            ) : (
+              <span
+                className="badge good dot"
+                title="Outbound is enabled, but sink mode reroutes every message to the sink address"
+              >
+                Outbound enabled
+              </span>
             )}
           </div>
           <div className="content">

@@ -40,7 +40,8 @@
       <span class="spacer"></span>
       {% if not live_mode %}<span class="badge warn dot" title="All outbound is routed to the sink address">Sink mode</span>{% endif %}
       {% if workspace.outbound_paused %}<span class="badge bad dot">Outbound paused</span>
-      {% else %}<span class="badge good dot">Sending live</span>{% endif %}
+      {% elif live_mode %}<span class="badge good dot">Sending live</span>
+      {% else %}<span class="badge good dot" title="Outbound is enabled, but sink mode reroutes every message to the sink address">Outbound enabled</span>{% endif %}
     </div>
     <div class="content">
       {% if msg is defined and msg %}<div class="banner {{ 'bad' if request.query_params.get('err') else 'ok' }}">{{ msg }}</div>{% endif %}

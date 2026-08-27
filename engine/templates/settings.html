@@ -146,7 +146,7 @@
   <p>
     Self-hosted endpoint:
     {% if local_llm_configured %}
-      <span class="badge good">connected</span>
+      <span class="badge good" title="LOCAL_LLM_BASE_URL is set — reachability is not checked until a call is made">configured</span>
       <span class="mono">{{ local_llm_base_url }}</span>
     {% else %}
       <span class="badge muted">not configured</span>
