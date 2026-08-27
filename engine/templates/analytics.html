@@ -29,6 +29,21 @@
     it in Settings.</p>
 </div>
 
+{% if workspace.playbook.get('benchmarks') %}
+<div class="panel">
+  <h2>Reference benchmarks</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Metric</th><th>Reference</th></tr>
+    {% for label, value in workspace.playbook['benchmarks'].items() %}
+    <tr><td>{{ label }}</td><td><strong>{{ value }}</strong></td></tr>
+    {% endfor %}
+  </table></div>
+  <p class="muted">Operator context only (from the workspace's seed
+    materials) — these numbers are never included in model prompts and can
+    never be quoted to a prospect.</p>
+</div>
+{% endif %}
+
 <div class="panel">
   <h2>Deliverability — domain warm-up</h2>
   <div class="grid cols-3">

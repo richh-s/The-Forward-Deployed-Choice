@@ -112,6 +112,8 @@ def build_system_prompt(workspace: Workspace, campaign: Campaign | None) -> str:
         f"VALUE PROPOSITION:\n{pb['value_proposition']}" if pb.get("value_proposition") else "",
         f"IDEAL CUSTOMER PROFILE:\n{pb['icp_definition']}" if pb.get("icp_definition") else "",
         f"STYLE GUIDE:\n{pb['style_guide']}" if pb.get("style_guide") else "",
+        f"POSITIONING (how we frame ourselves — never copy verbatim):\n"
+        f"{pb['positioning']}" if pb.get("positioning") else "",
         f"CAPACITY / OFFERING FACTS (the only capacity claims you may make):\n{pb['capacity_notes']}"
         if pb.get("capacity_notes") else "",
         f"CASE STUDIES (you may quote these outcomes; NEVER invent additional "

@@ -333,6 +333,10 @@ function SettingsInner() {
             <textarea name="case_studies" defaultValue={str("case_studies")} />
             <label>Example outreach (tone references)</label>
             <textarea name="examples" defaultValue={str("examples")} />
+            <label>Positioning (deck notes — how the company frames itself)</label>
+            <textarea name="positioning" defaultValue={str("positioning")} />
+            <label>Objection handling (patterns the reply agent may draw on)</label>
+            <textarea name="objection_handling" defaultValue={str("objection_handling")} />
             <div className="grid cols-2">
               <div>
                 <label>Support contact (shown in SMS HELP replies)</label>

@@ -127,6 +127,10 @@
     <textarea name="case_studies">{{ workspace.playbook.get('case_studies', '') }}</textarea>
     <label>Example outreach (tone references for the composer)</label>
     <textarea name="examples">{{ workspace.playbook.get('examples', '') }}</textarea>
+    <label>Positioning (deck notes — how the company frames itself)</label>
+    <textarea name="positioning">{{ workspace.playbook.get('positioning', '') }}</textarea>
+    <label>Objection handling (patterns the reply agent may draw on)</label>
+    <textarea name="objection_handling">{{ workspace.playbook.get('objection_handling', '') }}</textarea>
     <div class="grid cols-2">
       <div><label>Support contact (shown in SMS HELP replies)</label>
         <input name="support_contact" value="{{ workspace.playbook.get('support_contact', '') }}"></div>

@@ -636,6 +636,8 @@ async def update_playbook(
     pricing_notes: str = Form(""),
     case_studies: str = Form(""),
     examples: str = Form(""),
+    positioning: str = Form(""),
+    objection_handling: str = Form(""),
     sign_off: str = Form(""),
     support_contact: str = Form(""),
     honesty_constraints: str = Form(""),
@@ -653,12 +655,22 @@ async def update_playbook(
         "pricing_notes": pricing_notes.strip(),
         "case_studies": case_studies.strip(),
         "examples": examples.strip(),
+        "positioning": positioning.strip(),
+        "objection_handling": objection_handling.strip(),
         "sign_off": sign_off.strip(),
         "support_contact": support_contact.strip(),
     }
     if constraints:
         playbook["honesty_constraints"] = constraints
-    auth.workspace.playbook = {k: v for k, v in playbook.items() if v}
+    # Preserve keys the form doesn't manage (e.g. seed-provided benchmarks,
+    # future non-string entries) — saving the form must never wipe them.
+    preserved = {
+        k: v for k, v in (auth.workspace.playbook or {}).items()
+        if k not in playbook and k != "honesty_constraints"
+    }
+    auth.workspace.playbook = {
+        **preserved, **{k: v for k, v in playbook.items() if v}
+    }
     db.add(auth.workspace)
     return _redirect("/settings", "Playbook saved")
 

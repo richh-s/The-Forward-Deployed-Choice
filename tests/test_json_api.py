@@ -3,7 +3,7 @@ import httpx
 
 from engine.db import db_session
 from engine.models import Prospect
-from tests.conftest import login, seed_workspace
+from tests.conftest import login, post, seed_workspace
 
 
 async def test_me_requires_auth(client: httpx.AsyncClient):
@@ -95,3 +95,36 @@ async def test_login_with_stale_session_cookie_from_another_port(
     })
     assert resp.status_code == 303
     assert resp.headers["location"] == "/"
+
+
+def test_seed_playbook_uses_every_seed_material():
+    """The demo seed must draw on ALL of tenacious_sales_data/seed — not
+    just a subset: transcripts → objection_handling, deck (+notes) →
+    positioning, baseline numbers → benchmarks dict (kept out of prompts)."""
+    from scripts.seed_demo_workspace import build_playbook
+
+    pb = build_playbook()
+    assert len(pb["objection_handling"]) > 2000  # all five transcripts
+    assert "Slide" in pb["positioning"] or len(pb["positioning"]) > 1000
+    assert isinstance(pb["benchmarks"], dict) and len(pb["benchmarks"]) >= 5
+    # Prompt hygiene: benchmarks must never reach the reply prompt (the
+    # reply agent only injects string values).
+    assert not isinstance(pb["benchmarks"], str)
+
+
+async def test_playbook_save_preserves_unmanaged_keys(client: httpx.AsyncClient):
+    seed = await seed_workspace()
+    from engine.models import Workspace as WS
+
+    async with db_session() as db:
+        ws = await db.get(WS, seed["workspace_id"])
+        ws.playbook = {**ws.playbook, "benchmarks": {"reply rate": "1-3%"}}
+    await login(client, seed["email"])
+    resp = await post(client, "/settings/playbook", data={
+        "company_name": "Acme", "value_proposition": "We help.",
+    })
+    assert resp.status_code == 303
+    async with db_session() as db:
+        ws = await db.get(WS, seed["workspace_id"])
+        assert ws.playbook["benchmarks"] == {"reply rate": "1-3%"}
+        assert ws.playbook["company_name"] == "Acme"

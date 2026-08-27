@@ -31,6 +31,62 @@ def _read(name: str, limit: int = 4000) -> str:
     return path.read_text()[:limit] if path.exists() else ""
 
 
+def _deck_text() -> str:
+    """Slide text from the sales deck (positioning source of truth).
+    python-pptx is optional — without it the speaker notes still carry
+    the positioning."""
+    deck = SEED / "sales_deck.pptx"
+    if not deck.exists():
+        return ""
+    try:
+        from pptx import Presentation
+    except ImportError:
+        return ""
+    lines = []
+    for i, slide in enumerate(Presentation(str(deck)).slides, 1):
+        texts = [
+            shape.text.strip()
+            for shape in slide.shapes
+            if shape.has_text_frame and shape.text.strip()
+        ]
+        if texts:
+            lines.append(f"Slide {i}: " + " — ".join(texts))
+    return "\n".join(lines)[:2500]
+
+
+def _objection_handling() -> str:
+    """Digest of the five discovery transcripts: the challenge provides them
+    for tone and objection-handling patterns — this is what the reply agent
+    reads when a prospect pushes back."""
+    tdir = SEED / "discovery_transcripts"
+    if not tdir.is_dir():
+        return ""
+    parts = []
+    for path in sorted(tdir.glob("*.md")):
+        text = path.read_text()
+        # Header block (prospect / outcome) + the opening of the dialogue.
+        head, _, dialogue = text.partition("\n---\n")
+        budget = 2000 if "objection_heavy" in path.name else 1000
+        parts.append(f"## {path.stem}\n{head.strip()[:600]}\n{dialogue.strip()[:budget]}")
+    return "\n\n".join(parts)
+
+
+def _benchmarks() -> dict:
+    """Parse baseline_numbers.md tables into {metric: value}. Stored as a
+    dict on purpose: the reply agent only injects *string* playbook values
+    into prompts, so internal numbers can never be quoted at a prospect —
+    they surface on the Analytics page for operators instead."""
+    import re
+
+    text = _read("baseline_numbers.md", 20000)
+    rows = {}
+    for m in re.finditer(r"^\|\s*([^|]+?)\s*\|\s*\*\*(.+?)\*\*\s*\|", text, re.M):
+        label, value = m.group(1).strip(), m.group(2).strip()
+        if label.lower() not in ("metric", "---"):
+            rows[label] = value
+    return rows
+
+
 def build_playbook() -> dict:
     bench = {}
     bench_path = SEED / "bench_summary.json"
@@ -65,12 +121,23 @@ def build_playbook() -> dict:
         "pricing_notes": _read("pricing_sheet.md", 1500),
         "case_studies": _read("case_studies.md", 3000),
         "examples": "\n\n".join(sequences)[:2800],
+        # Deck notes + slide text: how Tenacious positions itself on calls.
+        "positioning": (
+            _read("sales_deck_notes.md", 3000)
+            + ("\n\nDECK SLIDES:\n" + _deck_text() if _deck_text() else "")
+        ).strip(),
+        # Discovery-transcript digest: objection/response patterns for the
+        # reply agent (the transcripts are synthetic, provided for style).
+        "objection_handling": _objection_handling(),
+        # Internal benchmarks (dict → excluded from every prompt; shown on
+        # the Analytics page as operator context).
+        "benchmarks": _benchmarks(),
         "sign_off": "Alex Chen, Senior Engagement Manager, Tenacious Consulting",
         "support_contact": "hello@tenacious.dev",
     }
 
 
-async def main(email: str, password: str) -> None:
+async def main(email: str, password: str, update: bool = False) -> None:
     async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -79,7 +146,13 @@ async def main(email: str, password: str) -> None:
             await db.execute(select(Workspace).where(Workspace.slug == "tenacious"))
         ).scalar_one_or_none()
         if existing:
-            print("Workspace 'tenacious' already exists — nothing to do.")
+            if update:
+                existing.playbook = build_playbook()
+                print("Workspace 'tenacious' exists — playbook refreshed from "
+                      "the seed materials.")
+            else:
+                print("Workspace 'tenacious' already exists — nothing to do "
+                      "(use --update to refresh the playbook).")
             return
 
         workspace = Workspace(
@@ -137,7 +210,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--email", required=True)
     parser.add_argument("--password", required=True)
+    parser.add_argument(
+        "--update", action="store_true",
+        help="refresh the existing workspace's playbook from the seed files",
+    )
     args = parser.parse_args()
     if len(args.password) < 10:
         raise SystemExit("Password must be at least 10 characters")
-    asyncio.run(main(args.email, args.password))
+    asyncio.run(main(args.email, args.password, update=args.update))

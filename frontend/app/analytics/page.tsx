@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Shell } from "@/components/shell";
+import { Shell, useMe } from "@/components/shell";
 import { Spinner, Stat } from "@/components/ui";
 import { apiGet } from "@/lib/api";
 
@@ -56,7 +56,10 @@ const pct = (v: number | null | undefined) =>
   v === null || v === undefined ? "—" : `${(v * 100).toFixed(1)}%`;
 
 function AnalyticsInner() {
+  const me = useMe();
   const [data, setData] = useState<Analytics | null>(null);
+  const benchmarks = (me.workspace.playbook as Record<string, unknown>)
+    .benchmarks as Record<string, string> | undefined;
 
   useEffect(() => {
     apiGet<Analytics>("/api/v1/analytics").then(setData).catch(() => {});
@@ -110,6 +113,37 @@ function AnalyticsInner() {
           Settings.
         </p>
       </div>
+
+      {benchmarks && Object.keys(benchmarks).length > 0 && (
+        <div className="panel">
+          <h2>Reference benchmarks</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>Reference</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(benchmarks).map(([label, value]) => (
+                  <tr key={label}>
+                    <td>{label}</td>
+                    <td>
+                      <strong>{value}</strong>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="muted">
+            Operator context only (from the workspace&apos;s seed materials) —
+            these numbers are never included in model prompts and can never be
+            quoted to a prospect.
+          </p>
+        </div>
+      )}
 
       <div className="panel">
         <h2>Deliverability — domain warm-up</h2>
