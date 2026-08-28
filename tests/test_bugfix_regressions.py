@@ -491,3 +491,27 @@ async def test_daily_counter_date_key_buckets_separately():
             await increment_daily_counter(
                 db, seed["workspace_id"], "q:c1", cap=1, date_key="2026-08-28"
             )
+
+
+async def test_hubspot_sync_skips_reserved_tld_demo_addresses():
+    """HubSpot rejects .example/.invalid emails as INVALID_EMAIL — synthetic
+    demo contacts must be skipped quietly, not dead-lettered forever."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as _patch
+
+    from engine.services.hubspot import sync_contact
+
+    seed = await seed_workspace()
+    async with db_session() as db:
+        await set_credentials(
+            db, seed["workspace_id"], "hubspot", {"access_token": "pat-x"}
+        )
+        await db.flush()
+        ws = await db.get(Workspace, seed["workspace_id"])
+        prospect = await db.get(Prospect, seed["prospect_id"])
+        prospect.email = "demo.contact@somecompany.example"
+        with _patch(
+            "engine.services.hubspot._request", new=AsyncMock()
+        ) as req:
+            assert await sync_contact(db, ws, prospect) is None
+            req.assert_not_called()  # no doomed API call was made

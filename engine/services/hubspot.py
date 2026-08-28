@@ -95,6 +95,18 @@ async def sync_contact(
     if not token:
         return None
 
+    # Synthetic demo addresses live on reserved TLDs precisely so they can
+    # never deliver — HubSpot (correctly) rejects them as invalid emails.
+    # Skip quietly rather than dead-lettering a job that can never succeed.
+    if prospect.email.rsplit(".", 1)[-1].lower() in (
+        "example", "invalid", "test", "localhost",
+    ):
+        logger.info(
+            "Skipping HubSpot sync for %s: reserved-TLD demo address",
+            prospect.email,
+        )
+        return None
+
     properties = {**_contact_properties(prospect), **_enrichment_properties(prospect)}
     resp = await _request(
         token, "POST", "/crm/v3/objects/contacts", {"properties": properties}
