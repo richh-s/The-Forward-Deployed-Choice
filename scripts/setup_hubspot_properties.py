@@ -29,6 +29,10 @@ PROPERTIES = [
     ("open_engineering_roles",      "Open Engineering Roles",       "Count of open engineering roles at enrichment time"),
     ("bench_match_status",          "Bench Match Status",           "bench_summary match: matched / partial / no_match"),
     ("outreach_status",             "Outreach Status",              "Current outreach state in the pipeline"),
+    # Booking lifecycle (written by hubspot.mark_meeting_booked)
+    ("meeting_booked",              "Meeting Booked",               "true once a discovery call is booked via Cal.com"),
+    ("meeting_time",                "Meeting Time",                 "Scheduled start time of the booked discovery call"),
+    ("cal_booking_id",              "Cal.com Booking ID",           "Cal.com booking uid backing meeting_booked"),
 ]
 
 created = []
