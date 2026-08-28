@@ -70,7 +70,7 @@
   </details>
   {% endif %}
   <form method="post" action="/approvals/{{ draft.id }}/approve">{{ csrf_field(request) }}
-    {% if draft.channel not in ('sms', 'whatsapp') %}
+    {% if draft.channel not in ('sms', 'whatsapp', 'telegram') %}
     <label>Subject</label>
     <input name="subject" value="{{ draft.subject }}" required>
     {% endif %}

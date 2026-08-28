@@ -413,6 +413,136 @@ async def whatsapp_webhook(
     return {"status": "queued"}
 
 
+# ── Telegram bot (conversational channel) ────────────────────────────
+
+
+@router.post("/webhooks/{slug}/telegram")
+async def telegram_webhook(
+    slug: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Inbound Telegram updates. Fail closed: Telegram echoes the secret we
+    registered with setWebhook in X-Telegram-Bot-Api-Secret-Token; requests
+    without it are rejected. Same shape as SMS/WhatsApp: /stop handled
+    synchronously, conversation queued for the reply agent."""
+    import hmac as _hmac
+
+    workspace = await _workspace_by_slug(db, slug)
+    if workspace is None:
+        return _IGNORED
+    creds = await get_credentials(db, workspace.id, "telegram") or {}
+    secret = creds.get("webhook_secret", "")
+    presented = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if not secret or not presented or not _hmac.compare_digest(secret, presented):
+        raise HTTPException(status_code=401, detail="Invalid Telegram secret")
+
+    try:
+        update = json.loads(await request.body())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON") from exc
+    if not isinstance(update, dict):
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    if not await _claim_event(
+        db, "telegram", f"{slug}:{update.get('update_id', '')}"
+    ):
+        return {"ok": True, "duplicate": True}
+
+    message = update.get("message")
+    if not isinstance(message, dict):
+        return {"ok": True, "ignored": "no message"}
+    chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
+    chat_id = str(chat.get("id", "")).strip()
+    text = str(message.get("text") or "").strip()
+    if not chat_id:
+        return {"ok": True, "ignored": "no chat id"}
+
+    async def _bot_reply(reply_text: str) -> None:
+        await enqueue(
+            db,
+            "telegram_raw_send",
+            {"workspace_id": workspace.id, "chat_id": chat_id,
+             "text": reply_text},
+            workspace_id=workspace.id,
+        )
+
+    # Deep-link start: /start <prospect_id> binds this chat to the prospect.
+    if text.startswith("/start"):
+        payload = text.split(maxsplit=1)[1].strip() if " " in text else ""
+        prospect = await db.get(Prospect, payload) if payload else None
+        if prospect is not None and prospect.workspace_id == workspace.id:
+            prospect.telegram_chat_id = chat_id
+            company = (workspace.playbook or {}).get(
+                "company_name", workspace.name
+            )
+            await _bot_reply(
+                f"Hi! You're now connected to {company}. Ask anything, or "
+                "send /stop to opt out of all messages."
+            )
+            return {"ok": True, "linked": True}
+        # No/unknown payload: onboarding helper (also how an admin learns
+        # the operator_chat_id to paste into Settings).
+        await _bot_reply(
+            f"This chat's id is {chat_id}. Operators: paste it as "
+            "operator_chat_id in Settings → credentials → telegram. "
+            "Prospects are linked via their personal deep link."
+        )
+        return {"ok": True}
+
+    if text.lower().lstrip("/") in ("stop", "unsubscribe", "quit", "cancel"):
+        await suppress(db, workspace.id, "telegram", chat_id, "opt_out")
+        rows = await db.execute(
+            select(Prospect).where(
+                Prospect.workspace_id == workspace.id,
+                Prospect.telegram_chat_id == chat_id,
+            )
+        )
+        for prospect in rows.scalars().all():
+            prospect.stage = "opted_out"
+            prospect.next_followup_at = None
+        await _bot_reply("You're unsubscribed and won't hear from us again. "
+                        "Send /start to reconnect.")
+        return {"ok": True, "opted_out": True}
+
+    prospect = (await db.execute(
+        select(Prospect).where(
+            Prospect.workspace_id == workspace.id,
+            Prospect.telegram_chat_id == chat_id,
+        )
+    )).scalars().first()
+    if prospect is None:
+        await _bot_reply(
+            "This chat isn't linked to a conversation yet — open your "
+            "personal link from our email to connect."
+        )
+        return {"ok": True, "ignored": "unlinked chat"}
+
+    inbound = Message(
+        workspace_id=workspace.id,
+        prospect_id=prospect.id,
+        channel="telegram",
+        direction="in",
+        body=text[:2000],
+    )
+    db.add(inbound)
+    await db.flush()
+    await enqueue(
+        db,
+        "inbound_message",
+        {
+            "workspace_id": workspace.id,
+            "prospect_id": prospect.id,
+            "channel": "telegram",
+            "text": text[:2000],
+            "message_id": inbound.id,
+        },
+        workspace_id=workspace.id,
+        idempotency_key=f"inbound:{inbound.id}",
+    )
+    return {"ok": True, "queued": True}
+
+
 # ── Cal.com (booking lifecycle) ──────────────────────────────────────
 
 

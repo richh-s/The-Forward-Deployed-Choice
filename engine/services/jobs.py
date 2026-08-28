@@ -67,10 +67,35 @@ async def _load_scoped(db: AsyncSession, payload: dict):
 
 @job_handler("slack_notify")
 async def handle_slack_notify(db: AsyncSession, job: Job) -> None:
-    """Slack pings run as their own job, enqueued atomically with the work
-    they announce — notifying mid-transaction would fire for work that later
-    rolls back, and fire again on every retry."""
+    """Operator pings (Slack AND Telegram, each best-effort) run as their
+    own job, enqueued atomically with the work they announce — notifying
+    mid-transaction would fire for work that later rolls back, and fire
+    again on every retry."""
+    from engine.services import telegram as telegram_svc
+
     await slack.notify(db, job.payload["workspace_id"], job.payload["text"])
+    await telegram_svc.notify_operator(
+        db, job.payload["workspace_id"], job.payload["text"]
+    )
+
+
+@job_handler("telegram_raw_send")
+async def handle_telegram_raw_send(db: AsyncSession, job: Job) -> None:
+    """Bot utility replies (onboarding hints, /stop confirmations) — the
+    person just messaged the bot, so this is a service-window response, not
+    outreach; policy checks don't apply."""
+    from engine.services import telegram as telegram_svc
+    from engine.services.credentials import get_credentials
+
+    creds = await get_credentials(
+        db, job.payload["workspace_id"], "telegram"
+    ) or {}
+    token = creds.get("bot_token")
+    if not token:
+        return
+    await telegram_svc._tg_call(token, "sendMessage", {
+        "chat_id": job.payload["chat_id"], "text": job.payload["text"],
+    })
 
 
 async def notify_slack(
@@ -252,6 +277,18 @@ async def handle_send_draft(db: AsyncSession, job: Job) -> None:
                 db, workspace, prospect,
                 to_phone=prospect.phone, body=draft.body, is_reply=True,
             )
+        elif (
+            is_reply
+            and draft.channel == "telegram"
+            and prospect.telegram_chat_id
+        ):
+            from engine.services.telegram import send_telegram
+
+            draft.status = "sending"
+            await db.commit()
+            message = await send_telegram(
+                db, workspace, prospect, body=draft.body, is_reply=True,
+            )
         else:
             message = await send_email(
                 db,
@@ -405,6 +442,8 @@ async def handle_inbound_message(db: AsyncSession, job: Job) -> None:
     hold = workspace.require_reply_approval or bool(result["escalate"])
     if channel in ("sms", "whatsapp") and prospect.phone:
         reply_channel = channel  # answer on the channel they wrote on
+    elif channel == "telegram" and prospect.telegram_chat_id:
+        reply_channel = "telegram"
     else:
         reply_channel = "email"
     draft = Draft(
@@ -412,7 +451,7 @@ async def handle_inbound_message(db: AsyncSession, job: Job) -> None:
         prospect_id=prospect.id,
         kind="reply",
         channel=reply_channel,
-        subject="" if reply_channel in ("sms", "whatsapp") else "Re: your reply",
+        subject="" if reply_channel in ("sms", "whatsapp", "telegram") else "Re: your reply",
         body=reply_text,
         touch_number=0,
         compose_cost_usd=result.get("cost_usd", 0.0),

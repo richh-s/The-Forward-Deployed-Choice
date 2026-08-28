@@ -161,12 +161,23 @@ async def send_email(
     unsubscribe_url = (
         f"{settings.base_url}/u/{prospect.unsubscribe_token}"
     )
+    # Optional Telegram hand-off: when the workspace bot is configured, the
+    # footer offers the prospect their personal deep link (opening it binds
+    # their chat to this prospect row — see webhooks.telegram_webhook).
+    telegram_line = ""
+    tg = await get_credentials(db, workspace.id, "telegram")
+    if tg and tg.get("bot_username"):
+        from engine.services.telegram import deep_link
+
+        link = deep_link(tg, prospect)
+        if link:
+            telegram_line = f"\nPrefer to chat? Message us on Telegram: {link}"
     payload = {
         "from": f"{workspace.from_name or workspace.name} <{workspace.from_email}>",
         "to": [to_address],
         "subject": subject,
-        "text": f"{body}\n\nUnsubscribe: {unsubscribe_url}",
-        "html": render_html(body, unsubscribe_url),
+        "text": f"{body}{telegram_line}\n\nUnsubscribe: {unsubscribe_url}",
+        "html": render_html(body + telegram_line, unsubscribe_url),
         "headers": {
             "List-Unsubscribe": f"<{unsubscribe_url}>",
             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

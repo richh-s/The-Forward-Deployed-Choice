@@ -200,6 +200,11 @@ class Prospect(Base, TimestampMixin):
     last_outbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     next_followup_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Telegram chat linked to this prospect (set when they /start the
+    # workspace bot with their deep-link payload); the conversational
+    # Telegram channel routes through it.
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(32), index=True)
+
     # Per-prospect unsubscribe token embedded in every email
     unsubscribe_token: Mapped[str] = mapped_column(
         String(32), default=new_id, unique=True

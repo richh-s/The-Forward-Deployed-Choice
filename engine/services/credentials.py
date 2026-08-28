@@ -26,6 +26,12 @@ PROVIDER_FIELDS: dict[str, list[str]] = {
     # Slack incoming webhook for operator notifications (drafts awaiting
     # review, escalations, kill-switch pauses, weekly digest).
     "slack": ["webhook_url"],
+    # Telegram bot (free, no carrier): operator notifications AND a
+    # conversational prospect channel. webhook_secret is echoed by Telegram
+    # in X-Telegram-Bot-Api-Secret-Token; operator_chat_id receives
+    # notifications and sink-mode messages.
+    "telegram": ["bot_token", "bot_username", "operator_chat_id",
+                 "webhook_secret"],
 }
 
 

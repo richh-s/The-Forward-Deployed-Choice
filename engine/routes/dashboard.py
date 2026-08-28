@@ -396,6 +396,7 @@ async def settings_page(
         "Africa's Talking": at_url,
         "Twilio voice": f"{base_url}/webhooks/{slug}/voice",
         "Twilio WhatsApp": f"{base_url}/webhooks/{slug}/whatsapp",
+        "Telegram": f"{base_url}/webhooks/{slug}/telegram",
     }
     team = (await db.execute(
         select(User)

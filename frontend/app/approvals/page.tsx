@@ -32,7 +32,7 @@ function Card({
   const [body, setBody] = useState(draft.body);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const needsSubject = !["sms", "whatsapp"].includes(draft.channel);
+  const needsSubject = !["sms", "whatsapp", "telegram"].includes(draft.channel);
 
   async function approve(e: FormEvent) {
     e.preventDefault();

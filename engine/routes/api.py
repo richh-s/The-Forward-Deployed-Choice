@@ -314,7 +314,7 @@ async def approve_draft(
     if not body.strip():
         return _redirect("/approvals", "Body cannot be empty", error=True)
     # SMS/WhatsApp reply drafts have no subject; everything else needs one.
-    if draft.channel not in ("sms", "whatsapp") and not subject.strip():
+    if draft.channel not in ("sms", "whatsapp", "telegram") and not subject.strip():
         return _redirect("/approvals", "Subject cannot be empty", error=True)
     # Learning loop: record how much the human changed before approving
     # (0 = sent verbatim, 1 = fully rewritten).
