@@ -545,3 +545,12 @@ async def test_sms_falls_back_to_twilio_when_at_has_no_key():
         tw.assert_called_once()
         assert msg.provider_message_id == "SM_test"
         assert msg.meta["carrier"] == "twilio"
+
+
+def test_neon_style_database_url_normalizes():
+    from engine.db import normalize_async_url
+
+    url = normalize_async_url(
+        "postgresql://u:p@ep-x.neon.tech/db?sslmode=require&channel_binding=require"
+    )
+    assert url == "postgresql+asyncpg://u:p@ep-x.neon.tech/db?ssl=require"

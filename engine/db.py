@@ -21,12 +21,24 @@ _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
 
 def normalize_async_url(url: str) -> str:
-    """Managed platforms (Render, Heroku) hand out driverless
-    `postgres://`/`postgresql://` URLs; the async engine needs asyncpg."""
+    """Managed platforms hand out URLs the async engine can't take verbatim:
+    Render/Heroku use driverless `postgres://`; Neon appends
+    `sslmode=require&channel_binding=require` (psycopg parameters — asyncpg
+    wants `ssl=require` and doesn't know channel_binding). Accept them all
+    so a pasted connection string just works."""
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
     if url.startswith("postgresql://"):
         url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+    if url.startswith("postgresql+asyncpg://") and "?" in url:
+        from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+        parts = urlsplit(url)
+        query = dict(parse_qsl(parts.query))
+        if "sslmode" in query:
+            query.setdefault("ssl", query.pop("sslmode"))
+        query.pop("channel_binding", None)
+        url = urlunsplit(parts._replace(query=urlencode(query)))
     return url
 
 
