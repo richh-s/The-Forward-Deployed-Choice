@@ -1,7 +1,11 @@
-"""Outbound SMS via Africa's Talking (HTTP API, async, with retries).
+"""Outbound SMS via Africa's Talking, with Twilio as the fallback carrier.
 
-The africastalking SDK is synchronous and initializes globally, which fights
-both asyncio and multi-tenancy — so we call the REST API directly.
+Provider selection per workspace: Africa's Talking when its credential has
+an api_key (the product's primary SMS carrier — best delivery on African
+networks); otherwise Twilio's Messages API when that credential has a
+from_number. The africastalking SDK is synchronous and initializes
+globally, which fights both asyncio and multi-tenancy — so we call the
+REST APIs directly.
 """
 import logging
 
@@ -36,6 +40,31 @@ def _is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code == 429 or exc.response.status_code >= 500
     return isinstance(exc, (httpx.TimeoutException, httpx.TransportError))
+
+
+TWILIO_API = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
+
+
+@retry(
+    retry=retry_if_exception(_is_retryable),
+    stop=stop_after_attempt(3),
+    wait=wait_random_exponential(multiplier=1, max=20),
+    reraise=True,
+)
+async def _twilio_sms_send(
+    account_sid: str, auth_token: str, from_number: str, to: str, body: str
+) -> dict:
+    resp = await get_client().post(
+        TWILIO_API.format(sid=account_sid),
+        auth=(account_sid, auth_token),
+        data={"From": from_number, "To": to, "Body": body},
+    )
+    if resp.status_code == 400:
+        # Deterministic recipient rejection (unverified trial number,
+        # invalid destination) — do not re-bill retries.
+        raise PermanentJobError(f"Twilio rejected the SMS: {resp.text[:300]}")
+    resp.raise_for_status()
+    return resp.json()
 
 
 @retry(
@@ -77,10 +106,20 @@ async def send_sms(
     """
     settings = get_settings()
     creds = await get_credentials(db, workspace.id, "africastalking")
+    twilio_creds = None
     if not creds or not creds.get("api_key"):
-        raise SendBlocked(
-            "Africa's Talking credentials are not configured for this workspace"
-        )
+        twilio_creds = await get_credentials(db, workspace.id, "twilio")
+        if not (
+            twilio_creds
+            and twilio_creds.get("account_sid")
+            and twilio_creds.get("auth_token")
+            and twilio_creds.get("from_number")
+        ):
+            raise SendBlocked(
+                "No SMS carrier configured: add Africa's Talking credentials "
+                "(api_key) or Twilio credentials (account_sid, auth_token, "
+                "from_number) for this workspace"
+            )
 
     to_phone = normalize_phone(to_phone)
     intended_recipient = to_phone
@@ -103,21 +142,30 @@ async def send_sms(
     ):
         raise SendBlocked("Recipient is on the sms suppression list")
 
-    result = await _at_send(
-        creds.get("username", "sandbox"),
-        creds["api_key"],
-        to_phone,
-        body,
-        workspace.sms_sender_id,
-    )
-    recipients = (result.get("SMSMessageData") or {}).get("Recipients") or []
-    provider_id = recipients[0].get("messageId") if recipients else None
-    status = recipients[0].get("status", "unknown") if recipients else "unknown"
-    if status not in ("Success", "Sent"):
-        # The API accepted the request but rejected this recipient (invalid
-        # number, blacklist, no credit) — retrying re-bills the same call for
-        # the same deterministic answer.
-        raise PermanentJobError(f"Africa's Talking rejected the SMS: {result}")
+    if twilio_creds is not None:
+        result = await _twilio_sms_send(
+            twilio_creds["account_sid"], twilio_creds["auth_token"],
+            twilio_creds["from_number"], to_phone, body,
+        )
+        provider_id = result.get("sid")
+        carrier = "twilio"
+    else:
+        result = await _at_send(
+            creds.get("username", "sandbox"),
+            creds["api_key"],
+            to_phone,
+            body,
+            workspace.sms_sender_id,
+        )
+        recipients = (result.get("SMSMessageData") or {}).get("Recipients") or []
+        provider_id = recipients[0].get("messageId") if recipients else None
+        status = recipients[0].get("status", "unknown") if recipients else "unknown"
+        if status not in ("Success", "Sent"):
+            # The API accepted the request but rejected this recipient
+            # (invalid number, blacklist, no credit) — retrying re-bills the
+            # same call for the same deterministic answer.
+            raise PermanentJobError(f"Africa's Talking rejected the SMS: {result}")
+        carrier = "africastalking"
 
     message = Message(
         workspace_id=workspace.id,
@@ -127,7 +175,7 @@ async def send_sms(
         body=body,
         provider_message_id=provider_id,
         status="sent",
-        meta={"sink_mode": not settings.live_mode},
+        meta={"sink_mode": not settings.live_mode, "carrier": carrier},
     )
     db.add(message)
     await db.flush()

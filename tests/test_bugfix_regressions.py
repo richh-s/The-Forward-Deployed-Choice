@@ -515,3 +515,33 @@ async def test_hubspot_sync_skips_reserved_tld_demo_addresses():
         ) as req:
             assert await sync_contact(db, ws, prospect) is None
             req.assert_not_called()  # no doomed API call was made
+
+
+async def test_sms_falls_back_to_twilio_when_at_has_no_key():
+    """Workspaces without a real Africa's Talking key use Twilio's Messages
+    API for SMS (same credential that powers WhatsApp/voice)."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as _patch
+
+    from engine.services.smser import send_sms
+
+    seed = await seed_workspace()
+    async with db_session() as db:
+        await set_credentials(db, seed["workspace_id"], "twilio", {
+            "account_sid": "AC1", "auth_token": "tok-tok-tok-tok",
+            "from_number": "+15005550006",
+        })
+        await db.flush()
+        ws = await db.get(Workspace, seed["workspace_id"])
+        prospect = await db.get(Prospect, seed["prospect_id"])
+        with _patch(
+            "engine.services.smser._twilio_sms_send",
+            new=AsyncMock(return_value={"sid": "SM_test"}),
+        ) as tw:
+            msg = await send_sms(
+                db, ws, prospect,
+                to_phone=prospect.phone, body="hi", is_reply=True,
+            )
+        tw.assert_called_once()
+        assert msg.provider_message_id == "SM_test"
+        assert msg.meta["carrier"] == "twilio"
