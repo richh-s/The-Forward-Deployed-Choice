@@ -168,7 +168,7 @@ async def handle_inbound(
         model=llm.model_for(workspace, "reply"),
         system=system,
         messages=messages,
-        max_tokens=1024,
+        max_tokens=4096,
         json_schema=REPLY_SCHEMA,
     )
     out = result.json()

@@ -185,7 +185,7 @@ Signal brief:
         model=llm.model_for(workspace, "compose"),
         system=build_system_prompt(workspace, campaign),
         messages=[{"role": "user", "content": user_prompt}],
-        max_tokens=2048,
+        max_tokens=4096,
         json_schema=COMPOSE_SCHEMA,
     )
     draft = result.json()

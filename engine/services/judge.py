@@ -102,7 +102,7 @@ Subject: {subject}
         model=llm.model_for(workspace, "judge"),
         system=JUDGE_SYSTEM,
         messages=[{"role": "user", "content": user_prompt}],
-        max_tokens=1024,
+        max_tokens=4096,
         effort="low",
         json_schema=JUDGE_SCHEMA,
     )
