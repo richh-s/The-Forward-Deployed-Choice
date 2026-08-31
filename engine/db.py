@@ -64,6 +64,17 @@ def get_engine():
                     },
                 },
             }
+            # Neon's pooled endpoint (and any PgBouncer in transaction mode)
+            # rotates the server connection between transactions, so asyncpg's
+            # prepared-statement cache goes stale and raises
+            # `prepared statement "__asyncpg_stmt_N__" does not exist` under
+            # concurrency. Disabling the cache is the supported way to run
+            # asyncpg through such a pooler. Only for pooled hosts: the cache
+            # is worth keeping on a direct connection, and this app pools for
+            # itself anyway (pool_size/max_overflow above).
+            if "-pooler." in url:
+                kwargs["connect_args"]["statement_cache_size"] = 0
+                kwargs["connect_args"]["prepared_statement_cache_size"] = 0
         _engine = create_async_engine(url, **kwargs)
         _sessionmaker = async_sessionmaker(
             _engine, expire_on_commit=False, autoflush=False
