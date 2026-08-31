@@ -46,6 +46,10 @@ services:
         sync: false
       - key: SENTRY_DSN
         sync: false           # optional but strongly recommended
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false           # optional; enables LLM tracing
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
       - key: METRICS_TOKEN
         generateValue: true
       - key: LIVE_MODE
@@ -88,6 +92,10 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: SENTRY_DSN
+        sync: false
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false           # the worker makes the LLM calls — it needs these
+      - key: LANGFUSE_SECRET_KEY
         sync: false
       - key: LIVE_MODE
         value: "false"

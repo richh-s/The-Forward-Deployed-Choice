@@ -170,6 +170,8 @@ async def handle_inbound(
         messages=messages,
         max_tokens=4096,
         json_schema=REPLY_SCHEMA,
+        role="reply",
+        trace_metadata={"prospect_id": prospect.id, "channel": channel},
     )
     out = result.json()
     out["cost_usd"] = result.cost_usd

@@ -14,6 +14,7 @@ from engine.queue import recover_stuck_jobs, worker_loop
 from engine.services import jobs as _jobs  # noqa: F401 — registers handlers
 from engine.services.http import close_client
 from engine.services.scheduler import scheduler_loop
+from engine.services.tracing import init_tracing, shutdown_tracing
 
 logger = logging.getLogger("worker")
 
@@ -21,6 +22,7 @@ logger = logging.getLogger("worker")
 async def main() -> None:
     configure_logging()
     init_sentry()
+    init_tracing()
     settings = get_settings()
 
     stop_event = asyncio.Event()
@@ -62,6 +64,8 @@ async def main() -> None:
     from engine.db import dispose_engine
 
     await close_client()
+    # Flush buffered traces last, after the loops have stopped.
+    shutdown_tracing()
     await dispose_engine()
     if crashed:
         raise SystemExit(1)

@@ -187,6 +187,11 @@ Signal brief:
         messages=[{"role": "user", "content": user_prompt}],
         max_tokens=4096,
         json_schema=COMPOSE_SCHEMA,
+        role="compose",
+        trace_metadata={
+            "prospect_id": prospect.id,
+            "campaign_id": getattr(campaign, "id", None),
+        },
     )
     draft = result.json()
     draft["avg_confidence"] = avg_conf

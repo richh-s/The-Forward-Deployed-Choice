@@ -21,6 +21,7 @@ from engine.queue import heartbeats, recover_stuck_jobs, worker_loop
 from engine.services import jobs as _jobs  # noqa: F401 — registers job handlers
 from engine.services.http import close_client
 from engine.services.scheduler import scheduler_loop
+from engine.services.tracing import init_tracing, shutdown_tracing
 
 logger = logging.getLogger(__name__)
 
@@ -65,12 +66,14 @@ async def lifespan(app: FastAPI):
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
         await close_client()
+        shutdown_tracing()
         await dispose_engine()
 
 
 def create_app() -> FastAPI:
     configure_logging()
     init_sentry()
+    init_tracing()
     settings = get_settings()  # validators fail fast on unsafe production config
 
     app = FastAPI(

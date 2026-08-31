@@ -33,6 +33,7 @@ from tenacity import (
 from engine.config import get_settings
 from engine.queue import PermanentJobError
 from engine.services.credentials import get_credentials
+from engine.services.tracing import trace_generation
 
 logger = logging.getLogger(__name__)
 
@@ -445,29 +446,54 @@ async def complete(
     max_tokens: int = 2048,
     effort: str | None = None,
     json_schema: dict | None = None,
+    role: str = "llm",
+    trace_metadata: dict | None = None,
 ) -> LLMResult:
     """Run one model call. With json_schema, .json() is guaranteed to parse
-    and contain the schema's required keys (both backends)."""
-    if model.startswith(LOCAL_PREFIX):
-        # Callers may have read (e.g. conversation history) on this session —
-        # release the transaction before the slow local-model call. (db may
-        # be None in direct/offline use: the local path needs no DB.)
-        if db is not None:
-            await db.commit()
-        return await _complete_local(
-            model=model,
-            system=system,
-            messages=messages,
-            max_tokens=max_tokens,
-            json_schema=json_schema,
-        )
-    return await _complete_anthropic(
-        db,
-        workspace_id,
+    and contain the schema's required keys (both backends).
+
+    `role` and `trace_metadata` only label the Langfuse trace; they never
+    affect the request. Tracing is inert unless LANGFUSE_* is configured, and
+    fails open if it is (see engine/services/tracing.py).
+    """
+    metadata = {
+        "role": role,
+        "workspace_id": workspace_id,
+        "backend": "local" if model.startswith(LOCAL_PREFIX) else "anthropic",
+        "max_tokens": max_tokens,
+        **(trace_metadata or {}),
+    }
+    with trace_generation(
+        name=role,
         model=model,
         system=system,
         messages=messages,
-        max_tokens=max_tokens,
-        effort=effort,
-        json_schema=json_schema,
-    )
+        metadata=metadata,
+    ) as span:
+        if model.startswith(LOCAL_PREFIX):
+            # Callers may have read (e.g. conversation history) on this
+            # session — release the transaction before the slow local-model
+            # call. (db may be None in direct/offline use: the local path
+            # needs no DB.)
+            if db is not None:
+                await db.commit()
+            result = await _complete_local(
+                model=model,
+                system=system,
+                messages=messages,
+                max_tokens=max_tokens,
+                json_schema=json_schema,
+            )
+        else:
+            result = await _complete_anthropic(
+                db,
+                workspace_id,
+                model=model,
+                system=system,
+                messages=messages,
+                max_tokens=max_tokens,
+                effort=effort,
+                json_schema=json_schema,
+            )
+        span.record(result)
+        return result

@@ -116,6 +116,8 @@ Subject: {subject}
         max_tokens=4096,
         effort="low",
         json_schema=JUDGE_SCHEMA,
+        role="judge",
+        trace_metadata={"mode": mode, "avg_confidence": avg_confidence},
     )
     scores = result.json()
     dimensions = {k: _clamp01(scores.get(k, 0.0)) for k in WEIGHTS}

@@ -19,3 +19,4 @@ bcrypt==5.0.0
 cryptography==50.0.0
 python-dotenv==1.2.3
 sentry-sdk[fastapi]==2.42.1  # error tracking; active only when SENTRY_DSN is set
+langfuse==4.15.1             # LLM tracing; active only when LANGFUSE_* keys are set

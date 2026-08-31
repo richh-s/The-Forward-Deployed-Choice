@@ -67,6 +67,18 @@ class Settings(BaseSettings):
     # own timeout so the Anthropic timeout can stay tight.
     local_llm_timeout_seconds: float = 180.0
 
+    # ── LLM tracing (Langfuse; optional, fail-open) ──────────────────
+    # Both keys must be set for tracing to activate. Traces carry full
+    # prompt/response bodies — i.e. prospect PII. LANGFUSE_HOST defaults to
+    # Langfuse Cloud; point it at a self-hosted instance to keep that data
+    # inside your own infrastructure.
+    langfuse_public_key: str = Field(default="")
+    langfuse_secret_key: str = Field(default="")
+    langfuse_host: str = Field(default="https://cloud.langfuse.com")
+    # Fraction of calls traced (1.0 = all). Lower it to cut ingest volume.
+    langfuse_sample_rate: float = 1.0
+    langfuse_timeout_seconds: int = 10
+
     # ── worker ────────────────────────────────────────────────────────
     run_worker: bool = Field(default=True)  # in-process worker loop
     worker_poll_seconds: float = 2.0
