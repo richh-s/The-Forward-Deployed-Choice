@@ -26,12 +26,16 @@ COPY alembic.ini server.py app.py worker.py ./
 # The built dashboard — engine/app.py mounts it at /app when present.
 COPY --from=frontend /fe/out frontend/out/
 
-# Non-root runtime user.
-RUN useradd --create-home appuser
+# Non-root runtime user. UID 1000 matches what Hugging Face Spaces runs
+# containers as, so the home directory stays writable there.
+RUN useradd --create-home --uid 1000 appuser
 USER appuser
+ENV HOME=/home/appuser
 
 EXPOSE 8000
 
-# Migrations run separately (`alembic upgrade head`) before rollout.
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--proxy-headers", "--forwarded-allow-ips=*"]
+# Migrations run before the server. On Render this is preDeployCommand, but a
+# platform without a pre-deploy hook (Hugging Face Spaces) has only this
+# entrypoint — `alembic upgrade head` is idempotent, so running it on every
+# start is safe and keeps the schema correct wherever the image is deployed.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn server:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*"]

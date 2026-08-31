@@ -1,3 +1,13 @@
+---
+title: Conversion Engine
+emoji: 📮
+colorFrom: green
+colorTo: gray
+sdk: docker
+app_port: 8000
+pinned: false
+---
+
 # Conversion Engine
 
 **A multi-tenant AI outbound conversion platform**, grown out of the
