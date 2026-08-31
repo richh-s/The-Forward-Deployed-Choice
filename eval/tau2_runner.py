@@ -85,24 +85,31 @@ def run_tau2_task(task: dict, model: str) -> dict:
 
 
 def run_task_with_trace(task: dict, model: str) -> tuple:
-    trace = langfuse.trace(
+    # Langfuse v4: the v2 `langfuse.trace(...)` / `trace.span(...)` API was
+    # removed. A root observation now stands in for the trace, and its
+    # `.trace_id` is what v2 exposed as `trace.id`.
+    trace = langfuse.start_observation(
         name="tau2-retail",
-        metadata={"task_id": task["id"], "model": model}
+        as_type="span",
+        metadata={"task_id": task["id"], "model": model},
     )
     start = time.time()
-    result = run_tau2_task(task, model)
-    latency_ms = (time.time() - start) * 1000
-
-    trace.span(
-        name="task-result",
-        output={
-            "pass":        result["pass"],
-            "cost_usd":    result["cost"],
-            "latency_ms":  latency_ms
-        }
-    )
+    try:
+        result = run_tau2_task(task, model)
+        latency_ms = (time.time() - start) * 1000
+        trace.start_observation(
+            name="task-result",
+            as_type="span",
+            output={
+                "pass":        result["pass"],
+                "cost_usd":    result["cost"],
+                "latency_ms":  latency_ms
+            }
+        ).end()
+    finally:
+        trace.end()
     langfuse.flush()
-    return result, trace.id
+    return result, trace.trace_id
 
 
 def compute_score_log(results: list, trace_ids: list, model: str) -> dict:

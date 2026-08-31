@@ -4,8 +4,13 @@
 openai
 requests
 resend==2.29.0
-langfuse==2.60.10
 africastalking==2.0.2
+
+# Langfuse comes from requirements.txt (4.x) — the research scripts
+# (eval/tau2_runner.py, mechanism/confidence_gated_agent.py,
+# probes/probe_runner.py, agent/email_sender.py) were ported from the removed
+# 2.x `langfuse.trace()` API to 4.x `start_observation()`, so product and
+# research now share one version and one environment.
 playwright==1.58.0
 scipy==1.17.1
 twilio==9.10.5

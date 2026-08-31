@@ -2,7 +2,7 @@ import re
 import resend
 import os
 import time
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 
 SENDER_NAME  = os.environ.get("SENDER_NAME",  "Alex Chen")
 SENDER_TITLE = os.environ.get("SENDER_TITLE", "Senior Engagement Manager")
@@ -42,17 +42,21 @@ def send_outreach(
         usage.get("prompt_tokens", 0)  * COST_PER_INPUT_TOKEN +
         usage.get("completion_tokens", 0) * COST_PER_OUTPUT_TOKEN
     )
-    trace = langfuse.trace(
-        name="email-outreach",
-        user_id=prospect["email"],
-        metadata={
-            "company":        prospect["company"],
-            "variant":        email_content.get("variant_tag"),
-            "mode":           email_content.get("mode_used"),
-            "avg_confidence": email_content.get("avg_confidence"),
-            "cost_usd":       cost_usd
-        }
-    )
+    # Langfuse v4: `langfuse.trace(...)` was removed. A root observation
+    # carries the trace (`.trace_id` replaces v2's `trace.id`), and trace-level
+    # attributes like user_id now come from propagate_attributes().
+    with propagate_attributes(user_id=prospect["email"]):
+        trace = langfuse.start_observation(
+            name="email-outreach",
+            as_type="span",
+            metadata={
+                "company":        prospect["company"],
+                "variant":        email_content.get("variant_tag"),
+                "mode":           email_content.get("mode_used"),
+                "avg_confidence": email_content.get("avg_confidence"),
+                "cost_usd":       cost_usd
+            }
+        )
     clean_body = _fill_placeholders(email_content["body"])
 
     start = time.time()
@@ -68,26 +72,30 @@ def send_outreach(
             ]
         })
     except Exception as e:
+        trace.update(level="ERROR", status_message=str(e)[:500])
+        trace.end()
         langfuse.flush()
         return {
             "error": "failed_send",
             "details": str(e),
-            "trace_id": trace.id
+            "trace_id": trace.trace_id
         }
 
     latency_ms = (time.time() - start) * 1000
-    trace.span(
+    trace.start_observation(
         name="resend-send",
+        as_type="span",
         output={
             "email_id":  result["id"],
             "latency_ms": latency_ms,
             "cost_usd":  cost_usd
         }
-    )
+    ).end()
+    trace.end()
     langfuse.flush()
     return {
         "email_id":  result["id"],
-        "trace_id":  trace.id,
+        "trace_id":  trace.trace_id,
         "cost_usd":  cost_usd,
         "latency_ms": latency_ms
     }

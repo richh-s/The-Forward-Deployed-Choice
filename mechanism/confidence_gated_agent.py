@@ -100,7 +100,9 @@ Return JSON only: {{"subject": "string", "body": "string",
 "avg_confidence": {conf_result['avg_confidence']:.3f}}}
 """
 
-    trace = langfuse.trace(name="mechanism-compose", metadata={
+    # Langfuse v4: `langfuse.trace(...)` was removed; a root observation
+    # carries the trace and exposes it as `.trace_id`.
+    trace = langfuse.start_observation(name="mechanism-compose", as_type="span", metadata={
         "company": brief.get("company"),
         "abstain": abstain,
         "abstain_reason": abstain_reason,
@@ -132,8 +134,11 @@ Return JSON only: {{"subject": "string", "body": "string",
         text = text[:-3]
     text = text.strip()
 
+    trace.update(output={"cost_usd": cost_usd})
+    trace.end()
+
     result = json.loads(text)
-    result["trace_id"] = trace.id
+    result["trace_id"] = trace.trace_id
     result["cost_usd"] = cost_usd
     result["abstain"] = abstain
     result["abstain_reason"] = abstain_reason

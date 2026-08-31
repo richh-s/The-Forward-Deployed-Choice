@@ -484,8 +484,11 @@ PROBES = [
 
 
 def run_probe(probe_input: str, system_prompt: str, context: dict) -> dict:
-    trace = langfuse.trace(
+    # Langfuse v4: `langfuse.trace(...)` was removed; a root observation
+    # carries the trace and exposes it as `.trace_id`.
+    trace = langfuse.start_observation(
         name="adversarial-probe",
+        as_type="span",
         metadata={"probe_input": probe_input[:100]}
     )
     t0 = time.time()
@@ -504,8 +507,12 @@ def run_probe(probe_input: str, system_prompt: str, context: dict) -> dict:
         response.usage.prompt_tokens * 0.00000015 +
         response.usage.completion_tokens * 0.00000060
     )
-    trace.span(name="probe-response", output={"text": output, "cost_usd": cost_usd})
-    return {"output": output, "trace_id": trace.id, "cost_usd": cost_usd, "latency_ms": latency_ms}
+    trace.start_observation(
+        name="probe-response", as_type="span",
+        output={"text": output, "cost_usd": cost_usd},
+    ).end()
+    trace.end()
+    return {"output": output, "trace_id": trace.trace_id, "cost_usd": cost_usd, "latency_ms": latency_ms}
 
 
 def measure_trigger_rate(probe: dict, trials: int = TRIALS_PER_PROBE) -> dict:
