@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 __pycache__/
 *.pyc
 *.pyo
@@ -32,3 +34,6 @@ branch_structure.json
 # Engine (product) local artifacts
 engine.db
 *.db
+.coverage
+.coverage.*
+htmlcov/

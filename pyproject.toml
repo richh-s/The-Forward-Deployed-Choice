@@ -17,3 +17,27 @@ include = ["engine/**/*.py", "tests/**/*.py", "server.py", "worker.py"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
 ignore = ["E501", "B008"]  # B008: FastAPI Depends() in defaults is idiomatic
+
+[tool.coverage.run]
+# SQLAlchemy's async layer bridges sync/async through greenlets. Without
+# greenlet in `concurrency`, coverage loses every frame executed after the
+# first `await` on a DB call — which under-reports request handlers
+# dramatically (webhooks.py measured 21% while its tests were in fact
+# exercising 61% of it). Never drop this: it makes coverage lie downward,
+# which hides real gaps behind noise.
+concurrency = ["greenlet", "thread"]
+# The product surface. agent/ is the pre-product prototype (OpenAI-based,
+# reached only from main.py and demo_ui.py, not imported by engine/ or the
+# deployed entrypoints) and is deliberately out of scope.
+source = ["engine", "enrichment"]
+omit = ["*/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+show_missing = true
+# Ratchet: raise this as coverage improves, never lower it to make CI pass.
+fail_under = 78

@@ -26,10 +26,13 @@ uvicorn server:app --reload
 # open http://localhost:8000 — or start empty and use the /setup wizard
 ```
 
-Run the test suite: `pip install pytest pytest-asyncio ruff && pytest tests/ -q`
+Run the test suite: `pip install pytest pytest-asyncio pytest-cov ruff && pytest tests/ -q`
 
-**→ Full architecture, security/compliance model, deployment runbook, go-live
-checklist, and operations guide: [PRODUCT.md](PRODUCT.md)**
+**→ Full architecture, security/compliance model, go-live checklist, and
+operations guide: [PRODUCT.md](PRODUCT.md)**
+
+**→ On-call procedures — kill switches, triage, rollback, backup/restore,
+and the first-live-send checklist: [RUNBOOK.md](RUNBOOK.md)**
 
 The product lives in [engine/](engine/) (+ `server.py`, `migrations/`,
 `tests/`, `render.yaml`, CI in `.github/workflows/`). Everything below this
