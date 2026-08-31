@@ -217,6 +217,78 @@ every tenant re-enters every credential.
 
 ---
 
+## 5a. First deploy (Render)
+
+Getting it *running*. Going live — actually mailing a prospect — is §6, and
+they are deliberately separate steps.
+
+### Before you click deploy
+
+Two decisions, neither reversible for free:
+
+**Plan.** `render.yaml` specifies `starter` web + `starter` worker +
+`basic-1gb` Postgres. Background workers are not on Render's free tier, and a
+free web service spins down when idle — a spun-down service runs no worker
+loop, so scheduled follow-ups never fire. Free tier is fine for proving the
+deploy works by hand; it cannot run the pipeline unattended.
+
+**One service or two.** The blueprint runs web and worker separately so a slow
+LLM job cannot stall webhook handling. To collapse to one (cheaper, less
+robust), delete the worker service and set `RUN_WORKER=true` on web.
+
+### Deploy
+
+1. Push the branch and point Render's blueprint at it (or merge to `main`).
+2. Create from `render.yaml`. It provisions Postgres and both services, and
+   generates `APP_SECRET_KEY`, `SETUP_TOKEN`, `METRICS_TOKEN`.
+3. Set the `sync: false` values on **both** services: `BASE_URL` (the public
+   https URL — the app refuses to boot on http or localhost),
+   `ANTHROPIC_API_KEY`, `SINK_EMAIL`, `SINK_PHONE`, and optionally
+   `SENTRY_DSN` / `LANGFUSE_*`.
+4. **Copy `APP_SECRET_KEY` into a password manager now.** It encrypts every
+   tenant credential and is not in database backups (§5).
+
+`preDeployCommand` runs `alembic upgrade head` before the new version goes
+live, so migrations apply on their own.
+
+### Verify, in this order
+
+```bash
+curl -s https://<host>/health | jq          # database reachable
+curl -s https://<host>/app/ -o /dev/null -w '%{http_code}\n'   # dashboard built
+```
+
+A green web `/health` says nothing about the worker — it only checks the
+database when `RUN_WORKER=false`. Judge the worker by its logs
+(`worker_loop` heartbeat) and by queue depth staying flat (§2).
+
+### Bootstrap the workspace
+
+5. Read `SETUP_TOKEN` from the Render dashboard, visit `/setup`, create the
+   admin. Without the token `/setup` refuses in production, which is what
+   stops the first passer-by becoming admin on a fresh database.
+6. Re-enter provider credentials in Settings. **They do not travel** — local
+   credentials live in local SQLite; production has its own Postgres.
+7. Register the webhooks, now that `BASE_URL` is public:
+   ```bash
+   python scripts/setup_telegram_webhook.py --slug <slug>
+   python scripts/setup_calcom_webhook.py --slug <slug>
+   ```
+   Resend's is created in its dashboard (or via its API); store the signing
+   secret in Settings. Every provider fails closed, so an unregistered or
+   mis-secreted webhook means inbound replies silently do nothing.
+8. Delete any webhook still pointing at an old tunnel URL — a stale
+   subscriber is the usual reason "nothing happens" after a redeploy.
+
+### Smoke test before §6
+
+With `LIVE_MODE=false`, activate a campaign and let one draft run end to end.
+Everything reaches `SINK_EMAIL` instead of a prospect, so this exercises the
+real credentials, the queue, compose, judge and send without touching anyone.
+Only then move to §6.
+
+---
+
 ## 6. Going live (first real send)
 
 The system ships with `LIVE_MODE=false` — it has never sent to a real

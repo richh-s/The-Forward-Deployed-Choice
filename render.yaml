@@ -44,6 +44,9 @@ services:
         sync: false           # set to the public https URL after first deploy
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: ANTHROPIC_WORKSPACE_ID
+        sync: false           # only for identity-linked ("All workspaces")
+                              # keys; a workspace-scoped key needs no value
       - key: SENTRY_DSN
         sync: false           # optional but strongly recommended
       - key: LANGFUSE_PUBLIC_KEY
@@ -91,6 +94,9 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: ANTHROPIC_WORKSPACE_ID
+        sync: false           # only for identity-linked ("All workspaces")
+                              # keys; a workspace-scoped key needs no value
       - key: SENTRY_DSN
         sync: false
       - key: LANGFUSE_PUBLIC_KEY
