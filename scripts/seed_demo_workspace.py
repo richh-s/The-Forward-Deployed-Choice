@@ -143,16 +143,45 @@ def build_playbook() -> dict:
 # Tenacious ICP headcount bands (segments 1-2 of the handed ICP definition).
 ICP_BANDS = ("11-50", "51-100", "101-250", "251-500", "501-1000", "1001-5000")
 
+# The ICP is B2B *tech* ("managed talent outsourcing and project consulting to
+# B2B tech companies" — icp_definition.md), but headcount alone does not
+# express that: "Health Care" is the single most common category among funded
+# companies in the ICP bands, so a headcount-only filter reliably picks a
+# clinic and the composer is then asked to sell an engineering-capacity pitch
+# to a hospital. The judge correctly penalises the result. Gate on industry
+# too, using the ODM's own category vocabulary.
+# Categories that indicate the company *builds software* — which is what
+# engineering capacity is sold against. Deliberately excludes broad or
+# ambiguous tags: "Internet" and "Marketplace" match nearly every funded
+# startup (a property-management marketplace is not an engineering-capacity
+# buyer), and hardware/robotics need a different pitch than managed software
+# teams.
+ICP_TECH_CATEGORIES = frozenset({
+    "Information Technology", "Software", "Enterprise Software", "SaaS",
+    "Artificial Intelligence (AI)", "Machine Learning", "Analytics",
+    "Big Data", "Data Integration", "Cloud Computing", "Cyber Security",
+    "Developer APIs", "Developer Tools", "DevOps", "Information Services",
+    "Internet of Things", "Apps", "Mobile Apps", "Web Development", "FinTech",
+})
+
+
+def _is_tech(record: dict) -> bool:
+    cats = {c.strip() for c in (record.get("category_list") or "").split(",")}
+    return bool(cats & ICP_TECH_CATEGORIES)
+
 
 def pick_demo_company() -> dict:
     """Deterministic, data-driven pick from the handed ODM sample: the most
-    recently funded company inside the ICP headcount bands (preferring
-    records with named people, so the leadership signals have real data);
-    falls back to the most recently funded, then the first record."""
+    recently funded company that is inside the ICP headcount bands AND in a
+    B2B-tech category (preferring records with named people, so the leadership
+    signals have real data). Falls back by relaxing one constraint at a time —
+    tech+band, then band, then funded, then anything — so a narrower dataset
+    still seeds rather than hard-failing."""
     records = json.loads((BASE / "data" / "crunchbase_odm_sample.json").read_text())
     funded = [r for r in records if r.get("last_funding_at")]
-    in_icp = [r for r in funded if r.get("num_employees_enum") in ICP_BANDS]
-    pool = in_icp or funded or records
+    in_band = [r for r in funded if r.get("num_employees_enum") in ICP_BANDS]
+    in_icp = [r for r in in_band if _is_tech(r)]
+    pool = in_icp or in_band or funded or records
     pool.sort(
         key=lambda r: (r.get("last_funding_at", ""), len(r.get("people", []))),
         reverse=True,
