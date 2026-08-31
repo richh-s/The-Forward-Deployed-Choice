@@ -35,12 +35,28 @@ def normalize_phone(phone: str) -> str:
     return p
 
 
+# Channels whose address is an E.164 phone number. Everything else carries a
+# different kind of identifier — Telegram's is a numeric chat id — and running
+# those through normalize_phone prepends a "+" that is meaningless (chat 555
+# stored as "+555"). It round-trips, because reads normalise the same way, but
+# it makes stored data wrong on its face and breaks any lookup that does not
+# go through this module.
+PHONE_CHANNELS = frozenset({"sms", "whatsapp", "voice"})
+
+
+def normalize_address(channel: str, address: str) -> str:
+    """Canonical stored form of a suppression address, by channel."""
+    if channel == "email":
+        return normalize_email(address)
+    if channel in PHONE_CHANNELS:
+        return normalize_phone(address)
+    return address.strip()
+
+
 async def is_suppressed(
     db: AsyncSession, workspace_id: str, channel: str, address: str
 ) -> bool:
-    address = (
-        normalize_email(address) if channel == "email" else normalize_phone(address)
-    )
+    address = normalize_address(channel, address)
     row = await db.execute(
         select(Suppression.id).where(
             Suppression.workspace_id == workspace_id,
@@ -54,9 +70,7 @@ async def is_suppressed(
 async def suppress(
     db: AsyncSession, workspace_id: str, channel: str, address: str, reason: str
 ) -> None:
-    address = (
-        normalize_email(address) if channel == "email" else normalize_phone(address)
-    )
+    address = normalize_address(channel, address)
     if not address:
         return
     try:
@@ -80,9 +94,7 @@ async def suppress(
 async def unsuppress(
     db: AsyncSession, workspace_id: str, channel: str, address: str
 ) -> None:
-    address = (
-        normalize_email(address) if channel == "email" else normalize_phone(address)
-    )
+    address = normalize_address(channel, address)
     row = await db.execute(
         select(Suppression).where(
             Suppression.workspace_id == workspace_id,
