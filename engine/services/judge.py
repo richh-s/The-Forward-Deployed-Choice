@@ -12,14 +12,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from engine.models import Workspace
 from engine.services import llm
 
+# NOTE: no `minimum`/`maximum` on the number properties. The structured-output
+# API rejects those keywords outright ("For 'number' type, properties maximum,
+# minimum are not supported"), which failed every judge call with a 400. The
+# range is stated in each description so the model still targets it, and
+# _clamp01() below enforces it on the way in — the schema was never what
+# guaranteed the bound.
+_SCORE = {
+    "type": "number",
+    "description": "Score from 0.0 (worst) to 1.0 (best).",
+}
+
 JUDGE_SCHEMA = {
     "type": "object",
     "properties": {
-        "signal_grounding": {"type": "number", "minimum": 0, "maximum": 1},
-        "mode_compliance": {"type": "number", "minimum": 0, "maximum": 1},
-        "tone": {"type": "number", "minimum": 0, "maximum": 1},
-        "structure": {"type": "number", "minimum": 0, "maximum": 1},
-        "hallucination_free": {"type": "number", "minimum": 0, "maximum": 1},
+        "signal_grounding": _SCORE,
+        "mode_compliance": _SCORE,
+        "tone": _SCORE,
+        "structure": _SCORE,
+        "hallucination_free": _SCORE,
         "feedback": {
             "type": "string",
             "description": "One or two sentences: the biggest problem, or why it passes",
