@@ -44,6 +44,9 @@ class Settings(BaseSettings):
 
     # ── LLM (platform-level; per-workspace overrides live in the DB) ──
     anthropic_api_key: str = Field(default="")
+    # Required only for identity-linked API keys, which must declare the
+    # Anthropic workspace a request acts in. Ordinary keys ignore it.
+    anthropic_workspace_id: str = Field(default="")
     compose_model: str = Field(default="claude-opus-5")
     reply_model: str = Field(default="claude-opus-5")
     # Prefix a model with "local:" to serve it from LOCAL_LLM_BASE_URL

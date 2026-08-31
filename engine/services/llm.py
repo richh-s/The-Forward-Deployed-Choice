@@ -144,9 +144,18 @@ async def _client_for_workspace(
             "No Anthropic API key configured (workspace credentials or "
             "ANTHROPIC_API_KEY)"
         )
-    client = _anthropic_clients.get(api_key)
+    # Identity-linked keys must declare which Anthropic workspace the request
+    # acts in, or the API rejects every call with 400 "anthropic-workspace-id
+    # is required". Ordinary keys ignore the header, so sending it when
+    # configured is safe for both kinds.
+    ws_id = (creds or {}).get("workspace_id") or settings.anthropic_workspace_id
+    # Cache per (key, workspace) — two tenants may share a key but act in
+    # different Anthropic workspaces, and reusing one client would send the
+    # wrong header.
+    cache_key = f"{api_key}\x00{ws_id}"
+    client = _anthropic_clients.get(cache_key)
     if client is not None:
-        _anthropic_clients.move_to_end(api_key)
+        _anthropic_clients.move_to_end(cache_key)
         return client
     while len(_anthropic_clients) >= _MAX_ANTHROPIC_CLIENTS:
         _anthropic_clients.popitem(last=False)
@@ -154,8 +163,11 @@ async def _client_for_workspace(
         api_key=api_key,
         timeout=settings.llm_timeout_seconds,
         max_retries=settings.llm_max_retries,
+        default_headers=(
+            {"anthropic-workspace-id": ws_id} if ws_id else None
+        ),
     )
-    _anthropic_clients[api_key] = client
+    _anthropic_clients[cache_key] = client
     return client
 
 

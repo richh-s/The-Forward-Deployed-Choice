@@ -19,7 +19,7 @@ PROVIDER_FIELDS: dict[str, list[str]] = {
     "calcom": ["api_key", "webhook_secret", "base_url"],
     "africastalking": ["username", "api_key", "webhook_token", "sales_phone"],
     "twilio": ["account_sid", "auth_token", "from_number", "sales_phone"],
-    "anthropic": ["api_key"],
+    "anthropic": ["api_key", "workspace_id"],
     # Signal source for prospects: POST {email, name, company, title, phone}
     # → {"signals": {...}} (see engine/services/enrichment.py).
     "enrichment": ["url", "api_key"],
