@@ -26,6 +26,7 @@ from engine.models import (
     utcnow,
 )
 from engine.queue import beat, enqueue, purge_old_jobs, recover_stuck_jobs
+from engine.ratelimit import purge_expired as purge_expired_rate_limits
 from engine.services.enrichment import enrichment_configured
 from engine.services.killswitch import evaluate_killswitch
 from engine.services.suppression import SendBlocked, increment_daily_counter
@@ -338,9 +339,13 @@ async def _housekeeping() -> None:
                 await db.execute(
                     delete(DailyCounter).where(DailyCounter.date < cutoff_date)
                 )
+        # Rate-limit windows are worthless once closed; without this the
+        # table grows one row per (client, window) forever.
+        purged_rate = await purge_expired_rate_limits()
         logger.info(
-            "Retention purge: %d old jobs, %d expired sessions",
-            removed, purged_sessions,
+            "Retention purge: %d old jobs, %d expired sessions, "
+            "%d rate-limit windows",
+            removed, purged_sessions, purged_rate,
         )
     except Exception:  # noqa: BLE001
         logger.exception("Retention purge failed")

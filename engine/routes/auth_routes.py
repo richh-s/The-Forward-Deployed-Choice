@@ -69,7 +69,7 @@ async def login(
     password: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
-    check_login_rate(request, email)
+    await check_login_rate(request, email)
     addr = valid_email(email)
     user = None
     if addr:
@@ -136,7 +136,7 @@ def _setup_allowed(presented_token: str) -> None:
 
 @router.get("/setup", response_class=HTMLResponse)
 async def setup_page(request: Request, db: AsyncSession = Depends(get_db)):
-    check_public_rate(request, "setup")
+    await check_public_rate(request, "setup")
     if not await _no_users_yet(db):
         return RedirectResponse("/login", status_code=303)
     csrf_token = new_prelogin_token()
@@ -165,7 +165,7 @@ async def setup(
 ):
     """First-run bootstrap: create the first workspace and its admin.
     Disabled forever after the first user exists."""
-    check_public_rate(request, "setup")
+    await check_public_rate(request, "setup")
     _setup_allowed(setup_token)
 
     # Serialize concurrent bootstraps: on Postgres take a transaction-scoped

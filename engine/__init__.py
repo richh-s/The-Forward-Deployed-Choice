@@ -9,7 +9,8 @@ Package layout:
     security.py      — password hashing (off-loop), session/CSRF tokens,
                        HKDF-derived credential encryption with rotation
     csrf.py          — CSRF dependency (session HMAC + double-submit cookie)
-    ratelimit.py     — in-memory sliding-window limiters (login, public)
+    ratelimit.py     — DB-backed fixed-window limiters, shared across
+                       instances (login, public)
     middleware.py    — security headers, request IDs, body-size limits
     observability.py — JSON logging, request correlation, optional Sentry
     queue.py         — Postgres-backed job queue + worker loop (SAVEPOINT

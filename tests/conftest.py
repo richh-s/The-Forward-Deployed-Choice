@@ -40,11 +40,13 @@ from engine.security import csrf_token_for, hash_password  # noqa: E402
 @pytest.fixture(autouse=True)
 async def fresh_db():
     """Blank schema per test."""
-    ratelimit.reset_all()
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+    # Counters live in the DB now, so the schema reset above already clears
+    # them; this guards against a limiter that ever caches in process.
+    await ratelimit.reset_all()
     yield
     await dispose_engine()
 

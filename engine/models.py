@@ -386,6 +386,33 @@ class DailyCounter(Base):
     count: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class RateLimitCounter(Base):
+    """Fixed-window rate-limit counters, shared across every instance.
+
+    The limiter used to live in process memory, which meant N web instances
+    granted N times the configured allowance and a restart cleared every
+    lockout. This table makes the count global without adding Redis — the
+    endpoints it guards (login, setup, unsubscribe) are low-volume, so one
+    upsert per request is cheap.
+
+    `window_start` is the epoch second at which the current fixed window
+    began, so (bucket, window_start) is the counter's identity and old rows
+    are trivially purgeable by age.
+    """
+
+    __tablename__ = "rate_limit_counters"
+    __table_args__ = (
+        UniqueConstraint("bucket", "window_start", name="uq_rate_window"),
+        Index("ix_rate_limit_window_start", "window_start"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    # "<limiter name>:<client key>", e.g. "login-ip:203.0.113.4"
+    bucket: Mapped[str] = mapped_column(String(320), nullable=False)
+    window_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 

@@ -777,7 +777,7 @@ async def unsubscribe_page(
     """Confirmation page only — the write happens on POST. Mail scanners and
     link prefetchers GET every URL in an email; a bare GET must never
     unsubscribe someone who didn't click."""
-    check_public_rate(request, "unsubscribe")
+    await check_public_rate(request, "unsubscribe")
     await _prospect_by_token(db, token)  # 404 for unknown links
     return HTMLResponse(
         f"<html><body style='{_UNSUB_STYLE}'>"
