@@ -3,8 +3,9 @@ title: Conversion Engine
 emoji: 📮
 colorFrom: green
 colorTo: gray
-sdk: docker
-app_port: 8000
+sdk: gradio
+app_file: hf_space_app.py
+app_port: 7860
 pinned: false
 ---
 
