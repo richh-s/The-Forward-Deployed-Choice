@@ -1,0 +1,78 @@
+# Free-tier variant of render.yaml — for demos and evaluation, NOT production.
+#
+# Differences from render.yaml, and why:
+#
+#   * No managed database. Render's Postgres is paid (and its free tier has
+#     historically expired), so bring an external free one — Neon works
+#     verbatim, engine/db.py already normalises its sslmode/channel_binding
+#     parameters for asyncpg.
+#   * One service, not two. Background Workers are not offered on the free
+#     tier, so the web service runs the queue in-process (RUN_WORKER=true).
+#   * Migrations run in startCommand. preDeployCommand is a paid feature, so
+#     `alembic upgrade head` runs before uvicorn instead. It is idempotent, so
+#     restarts are safe.
+#
+# THE LIMITATION THAT MATTERS: a free web service spins down after ~15 minutes
+# of inactivity, and a spun-down service runs no worker loop. Scheduled
+# follow-ups will not fire while it sleeps, and the first request after
+# sleeping takes ~30s to wake. Good enough to demo the whole pipeline by hand;
+# not good enough to leave running unattended. Use render.yaml for that.
+
+services:
+  - type: web
+    name: conversion-engine
+    runtime: python
+    plan: free
+    buildCommand: >-
+      pip install -r requirements.txt -c requirements.lock &&
+      cd frontend && npm ci --no-audit --no-fund && npm run build
+    # Migrations first, then serve. --proxy-headers so request.url reflects
+    # the original https scheme (Twilio signs the public URL).
+    startCommand: >-
+      alembic upgrade head &&
+      uvicorn server:app --host 0.0.0.0 --port $PORT
+      --proxy-headers --forwarded-allow-ips='*'
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      # Neon (or any free Postgres). Paste the connection string as given —
+      # normalize_async_url() handles the driver prefix and SSL parameters.
+      - key: DATABASE_URL
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: APP_SECRET_KEY
+        generateValue: true
+      - key: SETUP_TOKEN
+        generateValue: true   # required by /setup — read it from the dashboard
+      - key: METRICS_TOKEN
+        generateValue: true
+      - key: BASE_URL
+        sync: false           # set to the public https URL after first deploy
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_WORKSPACE_ID
+        sync: false           # only for identity-linked "All workspaces" keys
+      - key: SENTRY_DSN
+        sync: false
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
+      - key: LIVE_MODE
+        value: "false"        # flip to "true" only after go-live sign-off
+      - key: SINK_EMAIL
+        sync: false
+      - key: SINK_PHONE
+        sync: false
+      # One process serves HTTP and drains the queue, on a small instance —
+      # keep concurrency low so a burst of LLM jobs cannot starve requests.
+      - key: RUN_WORKER
+        value: "true"
+      - key: WORKER_CONCURRENCY
+        value: "2"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json

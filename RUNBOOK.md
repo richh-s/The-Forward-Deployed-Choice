@@ -236,6 +236,19 @@ deploy works by hand; it cannot run the pipeline unattended.
 LLM job cannot stall webhook handling. To collapse to one (cheaper, less
 robust), delete the worker service and set `RUN_WORKER=true` on web.
 
+### Free-tier variant
+
+`render-free.yaml` deploys one service on Render's free plan with an external
+free Postgres (Neon — `engine/db.py` normalises its connection string as
+given). Background Workers are not on the free tier, so that service runs the
+queue in-process, and migrations move into `startCommand` because
+`preDeployCommand` is a paid feature.
+
+It is for demos and evaluation. A free web service spins down after ~15
+minutes idle, and a spun-down service runs no worker loop — scheduled
+follow-ups will not fire while it sleeps. Everything can be driven by hand;
+nothing can be left running.
+
 ### Deploy
 
 1. Push the branch and point Render's blueprint at it (or merge to `main`).
