@@ -580,6 +580,7 @@ async def calcom_webhook(
     if booking and booking.prospect_id and trigger in (
         "BOOKING_CREATED", "BOOKING_RESCHEDULED"
     ):
+        start_time = str(booking_payload.get("startTime", ""))
         await enqueue(
             db,
             "hubspot_mark_booked",
@@ -587,10 +588,14 @@ async def calcom_webhook(
                 "workspace_id": workspace.id,
                 "prospect_id": booking.prospect_id,
                 "booking_uid": booking.provider_uid,
-                "booking_time": str(booking_payload.get("startTime", "")),
+                "booking_time": start_time,
             },
             workspace_id=workspace.id,
-            idempotency_key=f"hs_booked:{booking.provider_uid}",
+            # Keyed on the slot, not just the booking: Cal.com reuses the
+            # uid across a reschedule, so keying on uid alone would drop
+            # the reschedule as a duplicate and leave the CRM on the stale
+            # meeting time. Provider retries of one slot still collapse.
+            idempotency_key=f"hs_booked:{booking.provider_uid}:{start_time}",
         )
     return {"received": True}
 
