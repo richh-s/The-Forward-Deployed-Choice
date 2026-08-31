@@ -1,14 +1,3 @@
----
-title: Conversion Engine
-emoji: 📮
-colorFrom: green
-colorTo: gray
-sdk: gradio
-app_file: hf_space_app.py
-app_port: 7860
-pinned: false
----
-
 # Conversion Engine
 
 **A multi-tenant AI outbound conversion platform**, grown out of the
