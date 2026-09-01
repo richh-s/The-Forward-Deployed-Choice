@@ -16,7 +16,7 @@
       <button class="secondary">Search</button>
     </form>
     <a class="btn secondary" href="/prospects.csv">Export CSV</a>
-    <a class="btn" href="/campaigns">Import prospects</a>
+    {% if import_campaign %}<a class="btn" href="/campaigns/{{ import_campaign.id }}#import">Import prospects</a>{% else %}<a class="btn secondary" href="/campaigns">Create a campaign first</a>{% endif %}
   </span>
 </div>
 

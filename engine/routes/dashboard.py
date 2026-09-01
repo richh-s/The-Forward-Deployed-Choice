@@ -215,10 +215,21 @@ async def prospects_page(
         PROSPECTS_PAGE_SIZE,
     )
     prospects = result.scalars().all()
+    # The CSV import form lives on a campaign page, so this page needs a
+    # campaign to point at — otherwise "Import prospects" lands on a list and
+    # the user has to guess the form is nested inside one. Prefer an active
+    # campaign; fall back to the oldest.
+    import_campaign = (await db.execute(
+        select(Campaign)
+        .where(Campaign.workspace_id == auth.workspace.id)
+        .order_by((Campaign.status != "active"), Campaign.created_at)
+        .limit(1)
+    )).scalars().first()
     return templates.TemplateResponse(
         request, "prospects.html",
         await _ctx(request, auth, db, prospects=prospects, stages=PROSPECT_STAGES,
-             active_stage=stage, search=q, pager=pager),
+             active_stage=stage, search=q, pager=pager,
+             import_campaign=import_campaign),
     )
 
 
