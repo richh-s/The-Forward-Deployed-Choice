@@ -37,6 +37,18 @@
       <input type="file" name="file" accept=".csv" required>
       <div style="margin-top:10px"><button>Import</button></div>
     </form>
+    {% if dataset_count %}
+    <hr style="margin:16px 0;border:0;border-top:1px solid var(--rule,#e5e5e5)">
+    <h2 style="margin-top:0">Or import from the bundled dataset</h2>
+    <p class="muted">{{ dataset_count }} companies in the shipped dataset match
+      this workspace's ICP — recently funded, in an ICP headcount band, and
+      building software. Contacts are synthetic
+      (<span class="mono">.example</span> addresses cannot deliver).
+      Re-running skips anyone already imported.</p>
+    <form method="post" action="/campaigns/{{ campaign.id }}/import-dataset">{{ csrf_field(request) }}
+      <button>Import {{ dataset_count }} from dataset</button>
+    </form>
+    {% endif %}
   </div>
   <div class="panel">
     <h2>Campaign settings</h2>

@@ -24,6 +24,7 @@ from engine.services.credentials import (
     configured_providers,
     get_credentials,
 )
+from engine.services.dataset import dataset_available, matching_companies
 from engine.services.killswitch import compute_metrics
 from engine.templating import templates
 
@@ -185,6 +186,10 @@ async def campaign_detail(
             stages=PROSPECT_STAGES,
             prospects=prospects,
             pager=pager,
+            # Offer the bundled dataset only when it shipped, and say how
+            # many match — an import button with an unknown result is worse
+            # than no button.
+            dataset_count=len(matching_companies()) if dataset_available() else 0,
         ),
     )
 

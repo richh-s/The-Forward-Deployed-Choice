@@ -44,6 +44,7 @@ from engine.services.credentials import (
     set_credentials,
     validate_credential_payload,
 )
+from engine.services.dataset import prospect_rows
 from engine.services.emailer import send_test_email
 from engine.services.suppression import SendBlocked, suppress
 from engine.validation import valid_email, valid_phone
@@ -188,6 +189,63 @@ async def update_campaign_settings(
     playbook["angle"] = angle.strip()
     campaign.playbook = playbook
     return _redirect(f"/campaigns/{campaign.id}", "Campaign updated")
+
+
+@router.post("/campaigns/{campaign_id}/import-dataset")
+async def import_dataset_prospects(
+    campaign_id: str,
+    limit: int = Form(0),
+    auth: AuthContext = Depends(current_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import the bundled dataset's ICP matches straight into this campaign.
+
+    Same result as exporting a CSV and uploading it, without the round trip:
+    the operator should not have to do by hand what the system can already
+    work out. Existing prospects are skipped, so this is safe to re-run."""
+    campaign = await _own_campaign(db, auth, campaign_id)
+    rows = prospect_rows(limit or 0)
+    if not rows:
+        return _redirect(
+            f"/campaigns/{campaign.id}",
+            "No company dataset is bundled with this deployment", error=True,
+        )
+    emails = [r["email"] for r in rows]
+    existing = {
+        e for (e,) in (await db.execute(
+            select(Prospect.email).where(
+                Prospect.workspace_id == auth.workspace.id,
+                Prospect.email.in_(emails),
+            )
+        )).all()
+    }
+    created = 0
+    for row in rows:
+        if row["email"] in existing:
+            continue
+        db.add(Prospect(
+            workspace_id=auth.workspace.id,
+            campaign_id=campaign.id,
+            email=row["email"],
+            name=row["name"],
+            company=row["company"],
+            title=row["title"],
+            signals=row["signals"],
+            # Dataset firmographics are real, so these arrive part-enriched;
+            # the pipeline still runs live lookups for the other signals.
+            stage="enriched" if row["signals"] else "new",
+        ))
+        created += 1
+    db.add(AuditLog(
+        workspace_id=auth.workspace.id, action="prospects_imported",
+        detail={"source": "bundled_dataset", "created": created,
+                "skipped": len(rows) - created, "campaign_id": campaign.id},
+    ))
+    return _redirect(
+        f"/campaigns/{campaign.id}",
+        f"Imported {created} prospects from the dataset "
+        f"({len(rows) - created} already present)",
+    )
 
 
 @router.post("/campaigns/{campaign_id}/upload")

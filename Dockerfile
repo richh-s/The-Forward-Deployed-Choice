@@ -20,6 +20,9 @@ WORKDIR /app
 COPY requirements.txt requirements.lock ./
 RUN pip install -r requirements.txt -c requirements.lock
 
+# The bundled company dataset, so the in-app import works on a deployed
+# instance and not only from a developer's checkout.
+COPY data/crunchbase_odm_sample.json data/
 COPY engine/ engine/
 COPY migrations/ migrations/
 COPY alembic.ini server.py app.py worker.py ./
