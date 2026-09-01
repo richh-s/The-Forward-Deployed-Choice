@@ -41,10 +41,37 @@ def test_matches_are_a_small_fraction_of_the_dataset():
 
 def test_no_imported_contact_can_ever_be_delivered_to():
     """A live send must not be able to reach a real inbox: every generated
-    address sits on the reserved .example TLD."""
+    address sits on the reserved .example TLD. Names and titles are real
+    public firmographics; only the address is invented, because addresses
+    are not public and a guessed one could reach someone."""
     for row in prospect_rows():
         assert row["email"].endswith(".example")
-        assert "synthetic" in row["name"].lower()
+
+
+def test_real_people_are_used_where_the_dataset_names_them():
+    """Inventing a person for a real company would make the list look
+    plausible while being false — the failure this product exists to avoid."""
+    rows = prospect_rows()
+    named = [r for r in rows if "synthetic" not in r["name"].lower()]
+    assert len(named) > len(rows) * 0.5, "most companies name someone"
+    for r in named:
+        assert r["title"], f"{r['name']} has no title"
+
+
+def test_engineering_leadership_is_preferred():
+    """Managed engineering capacity is bought by whoever owns delivery."""
+    from engine.services.dataset import matching_companies, pick_contact
+    upswing = next(c for c in matching_companies() if c["name"] == "Upswing")
+    name, title = pick_contact(upswing)
+    # Upswing names a CEO, a CTO and a COO — the CTO should win.
+    assert "CTO" in title or "Technology" in title, f"picked {name} ({title})"
+
+
+def test_contact_falls_back_when_nobody_is_named():
+    from engine.services.dataset import pick_contact
+    name, title = pick_contact({"name": "Nobody Ltd"})
+    assert "synthetic" in name.lower()
+    assert title
 
 
 def test_rows_only_claim_what_the_dataset_asserts():

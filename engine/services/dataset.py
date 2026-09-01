@@ -35,14 +35,22 @@ ICP_TECH_CATEGORIES = frozenset({
     "Internet of Things", "Apps", "Mobile Apps", "Web Development", "FinTech",
 })
 
-# Cycled so an imported list does not read as one row repeated.
-TITLES = (
-    "VP Engineering",
-    "Chief Technology Officer",
-    "Head of Engineering",
-    "Director of Engineering",
-    "Co-Founder and CTO",
+# Who to address when the dataset names several people. Engineering
+# leadership first — they own the problem managed capacity solves — then the
+# founder or chief executive, who can authorise it. Matched against the
+# lower-cased title, first hit wins.
+ROLE_PRIORITY = (
+    ("cto", "chief technology"),
+    ("vp engineering", "vp of engineering", "head of engineering",
+     "director of engineering", "engineering"),
+    ("ceo", "chief executive"),
+    ("founder", "co-founder"),
+    ("coo", "chief operating", "cpo", "chief product"),
 )
+
+# Used only when the dataset names nobody at that company.
+FALLBACK_NAME = "Demo Contact (synthetic)"
+FALLBACK_TITLE = "Head of Engineering"
 
 
 def is_tech(record: dict) -> bool:
@@ -103,16 +111,45 @@ def signals_for(record: dict) -> dict:
     return signals
 
 
+def pick_contact(record: dict) -> tuple[str, str]:
+    """The person to address, and their title, from the dataset's own people.
+
+    Names and job titles are public firmographics and are used as given —
+    inventing a person for a real company would make the list look plausible
+    while being false, which is the failure this product exists to avoid. Only
+    the email address is synthetic, because addresses are not public and a
+    guessed one could reach a real inbox.
+    """
+    people = [p for p in (record.get("people") or []) if isinstance(p, dict)
+              and p.get("name")]
+    if not people:
+        return FALLBACK_NAME, FALLBACK_TITLE
+    def rank(person: dict) -> int:
+        title = (person.get("title") or person.get("job_title") or "").lower()
+        for i, needles in enumerate(ROLE_PRIORITY):
+            if any(n in title for n in needles):
+                return i
+        return len(ROLE_PRIORITY)
+    best = min(people, key=rank)
+    return (
+        best["name"],
+        best.get("title") or best.get("job_title") or FALLBACK_TITLE,
+    )
+
+
 def prospect_rows(limit: int = 0) -> list[dict]:
     """Importable rows: the same shape the CSV importer accepts."""
     rows = []
-    for i, record in enumerate(matching_companies(limit)):
+    for record in matching_companies(limit):
         company = record.get("name") or "Unknown"
+        name, title = pick_contact(record)
         rows.append({
+            # Synthetic address on the reserved .example TLD: it cannot
+            # deliver, so a real person can never be contacted by accident.
             "email": f"demo.contact@{_mail_slug(company)}.example",
-            "name": "Demo Contact (synthetic)",
+            "name": name,
             "company": company,
-            "title": TITLES[i % len(TITLES)],
+            "title": title,
             "signals": signals_for(record),
         })
     return rows
