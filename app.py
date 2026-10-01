@@ -10,6 +10,11 @@ Stable public URL registered once across all integrations:
   POST /internal/register-prospect — Register prospect for email-to-SMS handoff
   GET  /health                 — Render health check
 """
+import utils.net
+import utils.clients
+import utils.http_session
+import utils.transport
+import utils.session
 import os
 import re
 import json
